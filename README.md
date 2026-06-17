@@ -3,14 +3,14 @@
 <!-- After pushing to GitHub, replace <your-org>/reforge with the real path so the CI badge resolves. -->
 [![Tests](https://github.com/your-org/reforge/actions/workflows/test.yml/badge.svg)](https://github.com/your-org/reforge/actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-1590%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1767%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **An execution reliability runtime for AI agents — self-healing, governance-first, MCP-native.**
 
 Most agent frameworks treat the LLM as the conductor and the runtime as plumbing. Reforge inverts that: execution is the first-class layer, the model is a component inside it. The result is a runtime that can be benchmarked, governed, and audited the same way you would a database or scheduler — not a chat session.
 
-Tests: 1590 passing · Python 3.11+ · Stage: P11 (runtime + skills + MCP + dashboard + benchmark + agent capability + pluggable sandbox + EDA app + Text-to-SQL app + HPO/AutoML app)
+Tests: 1767 passing · Python 3.11+ · Stage: P42 + visual self-heal (runtime + skills + MCP + dashboard + benchmark + agent capability + pluggable sandbox + EDA / Text-to-SQL / HPO apps + vision codegen routing)
 
 ---
 
@@ -120,9 +120,21 @@ reforge "..."                            # now executes in python:3.11-slim
 
 ### Skill abstraction (P0–P3)
 - **Unified `Skill` Protocol** powers both code-as-action (LLM writes Python, sandbox imports skill lib) and tool-as-action (LLM emits OpenAI function-call)
-- **Built-in skills**: `python_sandbox`, `read`, `grep`, `glob`, `edit`, `web_search`
+- **Built-in skills**: `python_sandbox`, `read`, `grep`, `glob`, `edit`, `web_search`, `web_screenshot`, `vision_describe`, `compare_images`
 - **MCP integration**: hand-rolled sync stdio JSON-RPC client; `discover_and_register()` registers every remote tool as a Skill; same governor / memory / events govern remote tools
 - **Workspace-scoped by default**: file skills cannot escape `SkillContext.workspace` unless explicitly opted out
+
+### Visual self-heal (vision codegen path)
+- **Detected by intent + image**: when the user asks to reproduce / 复刻 a UI and a `target.png` exists in the workspace, codegen routes to a multimodal LLM (`LLMClient.for_vision_codegen()`) instead of the text-only path
+- **Direct pixel access**: the target image is attached to the codegen request as an OpenAI-style `image_url` content block. No intermediate text transcription — the model sees the actual layout, colors, fonts.
+- **4-role model split** (configurable, fall-through to `LLM_*` when empty):
+  - `LLM_MODEL` — text reasoning (planner / reflection / eval / policy)
+  - `CODEGEN_VISION_MODEL` — see-image-and-write-HTML (default `qwen-vl-max`)
+  - `VISION_LLM_MODEL` — `describe_image()` OCR (default `qwen3-vl-flash`)
+  - `VISION_JUDGE_MODEL` — `compare_images()` strict rubric scorer (default `qwen-vl-max`)
+- **Anchored rubric**: judge prompt includes a worked example with explicit numeric deductions (text typo -0.40, missing region -0.20, wrong proportion -0.15, etc.) so scores are honest rather than generic "be helpful"
+- **Tuned threshold**: generated code raises on `score < 0.85` — the empirical sweet spot for `qwen-vl-max` on UI reproduction (0.75 lets visibly-bad pass; 0.92 causes over-correction divergence)
+- **Per-step timing visibility**: vision helpers (`screenshot` / `describe_image` / `compare_images`) print `[reforge.step] <op>: start` then `<op>: <Ns> (ok|fail)`. Subprocess backend preserves buffered stdout on timeout so the CLI's `[stdout tail]` surfaces which step was active when the budget ran out.
 
 ### Sandbox backend (P8)
 - **Pluggable `SandboxBackend` Protocol**: code execution mechanism is separated from `SandboxExecutor` facade

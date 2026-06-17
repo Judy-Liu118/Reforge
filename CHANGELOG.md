@@ -7,6 +7,58 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Added
+- **Visual self-heal — vision codegen routing**: when the user request
+  references a `target.png` in the workspace AND matches visual-reproduction
+  intent (复刻 / reproduce / front-end / UI), `code_generation_node` routes
+  to `LLMClient.for_vision_codegen()` and attaches the image to the codegen
+  request as an OpenAI-style `image_url` content block. The model sees the
+  actual pixels, not a lossy `describe_image` text transcription. Routing
+  decision lives in `runtime/orchestration/graph/vision_routing.py` and is
+  testable in isolation. Empirically lands a 1-shot 0.85 reproduction on
+  the Claude UI mockup with `qwen-vl-max`
+- **`CODEGEN_VISION_*` config fields** (base_url / api_key / model) with
+  fall-through to `LLM_*` when empty, mirroring the pre-existing
+  `VISION_JUDGE_*` pattern. `.env.example` updated with templates for all
+  four LLM roles
+- **`VISION_CODEGEN_SYSTEM` prompt** — separate system prompt for the
+  vision codegen path (model sees the image directly, no `describe_image`
+  call instructions); demonstrates worked HTML interpolation pattern with
+  literal string copy-paste from the visible target
+- **Subprocess backend preserves buffered stdout on TimeoutExpired**:
+  previously `subprocess.run(timeout=...)`'s `stdout` and `stderr` were
+  thrown away when the parent killed the child, so the CLI's
+  `[stdout tail]` diagnostic block was empty on every timeout. Now both
+  buffers are decoded (handling bytes/str ambiguity from the SDK) and
+  surfaced. Tests cover the buffered-and-killed case plus the
+  no-output case
+- **`format_stdout_tail` CLI formatter** + wiring in `run_task` /
+  `run_multistep_task` so a failed attempt prints its last 20 lines of
+  stdout, including the `[reforge.step] <op>: <Ns>` timing prints. Lets
+  the user see *which* step consumed the budget when a self-heal attempt
+  times out, instead of just `[Error] Execution timed out after 300s`
+- **`[reforge.step] <op>: start` lines** in `screenshot()`,
+  `describe_image()`, `compare_images()` — emitted with `flush=True`
+  before the long network call. Without this, a subprocess killed
+  mid-operation left no trace of which helper was active, since the
+  completion print only fired in the `finally` block
+- **Anchored judge rubric** for `compare_images()` — `_build_question`
+  now includes a worked example with explicit numeric deductions (text
+  typo -0.40, missing region -0.20, missing icon -0.05 each, wrong
+  proportion -0.15, wrong color theme -0.15, etc.) so the judge model
+  anchors on numbers instead of default-helpful "looks similar"
+  scoring. Empirically moves `qwen-vl-max` from 0.85-generous to
+  ~0.65-0.85 honest on the same reproduction
+- **Self-heal trigger threshold tuned to 0.85** in `CODE_GENERATION_SYSTEM`
+  and `VISION_CODEGEN_SYSTEM` example flows. Empirically `qwen-vl-max`'s
+  achievable ceiling on UI reproduction; 0.75 is too lenient (lets
+  visibly-broken output pass), 0.92 causes over-correction divergence
+  (model inlines giant SVG paths trying to fix icons, blows the token
+  budget, emits truncated HTML)
+- **`web_screenshot.full_page` default flipped to `False`**: full-page
+  capture of Wikipedia / Notion produced 6000+ px tall images that
+  multiplied downstream vision API latency 2-3x. Viewport-only is the
+  correct semantics for "replicate this page" tasks; callers can still
+  override per-call
 - **Dirty-data SQL benchmark** (`data/sql_bench/dirty_cases.json`,
   `scripts/prepare_sql_dirty.py`): 5-case extension probing real-world
   data quality patterns the toy benchmark glosses over — case-inconsistent
