@@ -41,11 +41,11 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
 ]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.4",
 ]
 
