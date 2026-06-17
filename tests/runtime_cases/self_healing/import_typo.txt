@@ -1,0 +1,4 @@
+# case_name: import_typo
+# category: self_healing
+# expected_behavior: first attempt fails with ModuleNotFoundError on 'panda', retry corrects to 'pandas'
+用 python 导入 panda 库，创建一个 Series 并打印

@@ -1,0 +1,4 @@
+# case_name: csv_analysis
+# category: happy_path
+# expected_behavior: read file and compute statistics successfully
+读取 sales.csv，统计 revenue 列的总和和平均值，打印结果

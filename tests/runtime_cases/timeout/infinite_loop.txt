@@ -1,0 +1,4 @@
+# case_name: infinite_loop
+# category: timeout
+# expected_behavior: execution times out after 30s, timeout error captured
+用 python 写一个 while True 死循环，一直打印 hello

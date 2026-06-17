@@ -1,0 +1,4 @@
+# case_name: pandas_dataframe
+# category: happy_path
+# expected_behavior: execute successfully on first attempt
+用 pandas 创建一个 DataFrame，列名为 name 和 score，包含 5 条学生成绩数据，打印表格和 score 列的平均值

@@ -1,0 +1,4 @@
+# case_name: matplotlib_plot
+# category: happy_path
+# expected_behavior: generate a plot without errors
+读取 sales.csv，用 matplotlib 画 revenue 的折线图，保存为 plot.png

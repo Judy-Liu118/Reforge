@@ -1,0 +1,55 @@
+====== P0-1: Memory 过滤验证 ======
+
+--- intentional case: 应该跳过 ---
+  [saved: c8a5be8b]  [trace: runs/c8a5be8b/trace.json]  [memory: skipped — intentional/fake]
+
+--- genuine recovery: 应该保存 ---
+
+--- clean success: 应该保存 ---
+
+====== 持久化结果 ======
+
+Recovery:
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys,json; d=json.load(sys.stdin); [print(f'  {r["error_type"]} | {r["outcome"]} | domain={r["problem_signature"]["domain"]} | cause={r["problem_signature"]["root_cause"]}') for r in d]
+                       ~~~~~~~~~^^^^^^^^^^^
+  File "D:\anaconda3\Lib\json\__init__.py", line 293, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "D:\anaconda3\Lib\json\__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "D:\anaconda3\Lib\json\decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda3\Lib\json\decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+Success Patterns:
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys,json; d=json.load(sys.stdin); [print(f'  {r["error_type"] or "N/A"} | {r["outcome"]} | domain={r["problem_signature"]["domain"]}') for r in d]
+                       ~~~~~~~~~^^^^^^^^^^^
+  File "D:\anaconda3\Lib\json\__init__.py", line 293, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "D:\anaconda3\Lib\json\__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "D:\anaconda3\Lib\json\decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\anaconda3\Lib\json\decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+====== P0-2: problem_signature retrieval ======
+No relevant memory found.
+
+No relevant memory found.

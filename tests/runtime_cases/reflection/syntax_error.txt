@@ -1,0 +1,4 @@
+# case_name: syntax_error
+# category: reflection
+# expected_behavior: first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错

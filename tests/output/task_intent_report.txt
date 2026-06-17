@@ -1,0 +1,269 @@
+============================================================
+  TaskIntent — Test Report
+============================================================
+
+=== 1. Unit Tests (15 total) ===
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.3, pluggy-1.6.0 -- D:\Reforge\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Reforge
+plugins: anyio-4.13.0, langsmith-0.8.9
+collecting ... collected 15 items
+
+reforge/tests/test_policy_with_intent.py::test_expected_error_stops PASSED [  6%]
+reforge/tests/test_policy_with_intent.py::test_traceback_demo_stops PASSED [ 13%]
+reforge/tests/test_policy_with_intent.py::test_recoverable_demo_retries PASSED [ 20%]
+reforge/tests/test_policy_with_intent.py::test_stress_test_stops PASSED  [ 26%]
+reforge/tests/test_policy_with_intent.py::test_normal_execution_retries_on_error PASSED [ 33%]
+reforge/tests/test_policy_with_intent.py::test_normal_execution_accepts_on_success PASSED [ 40%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_recovers_from_error PASSED [ 46%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_success_first_try PASSED [ 53%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_retries_exhausted PASSED [ 60%]
+reforge/tests/test_task_intent.py::test_expected_error PASSED            [ 66%]
+reforge/tests/test_task_intent.py::test_traceback_demo PASSED            [ 73%]
+reforge/tests/test_task_intent.py::test_recoverable_demo PASSED          [ 80%]
+reforge/tests/test_task_intent.py::test_normal_execution PASSED          [ 86%]
+reforge/tests/test_task_intent.py::test_stress_test PASSED               [ 93%]
+reforge/tests/test_task_intent.py::test_sandbox_escape PASSED            [100%]
+
+============================= 15 passed in 0.89s ==============================
+
+=== 2. Few-shot CLI: EXPECTED_ERROR -> STOP ===
+============================================================
+  Request: print hello and intentionally raise an error
+============================================================
+
+  [Plan] 1. Print "hello" to output.
+2. Raise an error intentionally, e.g., using raise ValueError("Intentional error") or anothe
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise Exception("This is an intentional error.")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (41ms)
+  [Error] Exception: This is an intentional error.
+  [Reflect] Exception: The script raises a generic Exception with a custom message on line 2.
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] terminal_intentional_failure
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       41ms         Exception
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    raise Exception("This is an intentional error.")
+Exception: This is an intentional error.
+============================================================
+  [saved: ec3a4ebc]  [trace: runs/ec3a4ebc/trace.json]  [memory: skipped — intentional/fake]
+
+=== 3. Few-shot CLI: TRACEBACK_DEMO -> STOP ===
+============================================================
+  Request: generate a traceback demo script
+============================================================
+
+  [Plan] Write a Python script that defines three nested functions (e.g., a(), b(), c()).
+In the deepest function, trigger a buil
+  [CodeGen #1] Generating initial code...
+  [Code] (19 lines)
+------------------------------------------------------------
+# Traceback demo script
+def level3():
+    print("Entering level3")
+    x = 1 / 0
+    return x
+
+def level2():
+    print("Entering level2")
+  ...
+    print("Finished level1")
+
+print("Running traceback demo...")
+level1()
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (43ms)
+  [Error] ZeroDivisionError: division by zero
+  [Reflect] ZeroDivisionError: Division by zero in level3() at line 4: `x = 1 / 0`.
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] terminal_intentional_failure
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       43ms         ZeroDivisionError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+Running traceback demo...
+Starting level1
+Entering level2
+Entering level3
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 19, in <module>
+    level1()
+    ~~~~~~^^
+  File "D:\Reforge\_script.py", line 15, in level1
+    level2()
+    ~~~~~~^^
+  File "D:\Reforge\_script.py", line 9, in level2
+    result = level3()
+  File "D:\Reforge\_script.py", line 4, in level3
+    x = 1 / 0
+        ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: 838f2a03]  [trace: runs/838f2a03/trace.json]  [memory: skipped — intentional/fake]
+
+=== 4. Few-shot CLI: RECOVERABLE_DEMO -> RETRY -> ACCEPT ===
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 选择一个非ASCII且易导致语法错误的乱码字符，如U+FFFD (�) 或零宽空格U+200B。
+2. 编写Python代码，在原语句`print("hello world")`的`print`关键字前直接插入该乱码字符，例如`�pr
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+​print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (37ms)
+  [Error] SyntaxError: invalid non-printable character U+200B
+  [Reflect] SyntaxError: Zero-width space (U+200B) before `print` caused an invalid non-printable character error.
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] recoverable_intentional
+  [CodeGen #2] Regenerating... (Zero-width space (U+200B) before `print` caused an invalid non-printable character error.)
+  [Code]
+------------------------------------------------------------
+try:
+    exec('\u200bprint("hello world")')
+except SyntaxError:
+    # 忽略 ZWNBS 引起的语法错误，之后按预期打印 hello world
+    print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (26ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       37ms         SyntaxError
+  2    OK         26ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   execution_recovered
+============================================================
+hello world
+============================================================
+  [saved: 23f3336b]  [trace: runs/23f3336b/trace.json]  [memory: RECOVERY]
+
+=== 5. Few-shot CLI: STRESS_TEST -> STOP ===
+============================================================
+  Request: write a while True infinite loop
+============================================================
+
+  [Plan] Start a new Python script or an interactive Python session.
+Define an infinite loop by using the `while True:` statement
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+while True:
+    pass
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=-1  (30007ms)
+  [Error] Execution timed out after 30s
+  [Reflect] TimeoutError: Infinite while True loop caused execution to exceed the 30-second time limit.
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] timeout
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       30007ms      UnknownError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_FAILED
+  [Decision Reason]   silent_failure
+============================================================
+Execution failed after 0 retries.
+
+--- stderr ---
+Execution timed out after 30s
+============================================================
+  [saved: c7dee78c]  [trace: runs/c7dee78c/trace.json]  [memory: FAILURE]
+
+=== 6. Few-shot CLI: NORMAL_EXECUTION -> ACCEPT ===
+============================================================
+  Request: read sales.csv, calculate revenue average
+============================================================
+
+  [Plan] 1. Load the sales.csv file into memory.
+2. Inspect the data to locate the column containing revenue values.
+3. Check for
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+if 'revenue' in df.columns:
+    avg = df['revenue'].mean()
+    print(f"Average revenue: {avg}")
+else:
+    print(f"No 'revenue' column found. Available columns: {df.columns.tolist()}")
+------------------------------------------------------------
+  [Exec #1] OK  (417ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         417ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Average revenue: 7668.763548387097
+============================================================
+  [saved: 9cfe94cb]  [trace: runs/9cfe94cb/trace.json]  [memory: SUCCESS_PATTERN]

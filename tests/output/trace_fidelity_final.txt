@@ -1,0 +1,93 @@
+============================================================
+  TRACE FIDELITY — 4 Outcome Taxonomy
+============================================================
+
+--- Outcome 1: SUCCESS ---
+============================================================
+revenue 列的平均值: 7668.763548387097
+============================================================
+  [saved: c498b997]  [trace: runs/c498b997/trace.json]
+================================================================
+  Session: c498b997
+  Outcome: SUCCESS
+  Events:  11
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 1. 加载 sales.csv 文件。 2. 确认 revenue 列存在且数据类型为数值。 3. 计算 revenue
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 126 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (424ms)    [OK]         : exit_code=0, stdout=33 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Execution succeeded
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]       : All checks passed
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : revenue 列的平均值: 7668.763548387097
+
+================================================================
+
+--- Outcome 2: RECOVERED ---
+============================================================
+hello world
+============================================================
+  [saved: 944580c9]  [trace: runs/944580c9/trace.json]
+================================================================
+  Session: 944580c9
+  Outcome: RECOVERED
+  Events:  20
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 1. Open a text editor and create a new Python script file (e
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 21 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (38ms)     [FAIL]       : exit_code=1, stdout=0 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Intentionally added a '§' character before print, causing invalid char
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]
+  ♻ RETRY_TRIGGERED                      [RETRY]      : retry_count=1
+  ··························································
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 20 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (26ms)     [OK]         : exit_code=0, stdout=12 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Execution succeeded
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]       : All checks passed
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : hello world
+
+================================================================
+
+--- Outcome 3: EXPECTED_FAILURE ---
+             ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: a3fcef2a]  [trace: runs/a3fcef2a/trace.json]
+================================================================
+  Session: a3fcef2a
+  Outcome: EXPECTED_FAILURE
+  Events:  11
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 1. Create a main function that calls function_a. 2. Inside f
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 327 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (40ms)     [FAIL]       : exit_code=1, stdout=84 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Division by zero in level3 function called from level2/level1
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : Execution failed after 0 retries.  --- stdout --- Starting t
+
+================================================================
+
+--- Outcome 4: FAILED (mock verified, see test_retries_exhausted) ---

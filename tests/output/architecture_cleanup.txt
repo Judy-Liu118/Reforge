@@ -1,0 +1,269 @@
+============================================================
+  Architecture Cleanup Verification
+  Pipeline: execution → reflection → classifier → policy
+============================================================
+
+=== Case 1: terminal intentional → STOP ===
+============================================================
+  Request: 打印 hello，然后故意报错
+============================================================
+
+  [Plan] Step 1: Print "hello" to the console using print("hello").
+Step 2: Deliberately raise an exception, such as raise Except
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise Exception("This is a deliberate error.")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (183ms)
+  [Error] Exception: This is a deliberate error.
+  [Reflect] Exception: The script intentionally raises an unhandled Exception, which terminates the program after printing "hello".
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] terminal_intentional_failure
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       183ms        Exception
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    raise Exception("This is a deliberate error.")
+Exception: This is a deliberate error.
+============================================================
+  [saved: c5f43263]  [trace: runs/c5f43263/trace.json]  [memory: skipped — intentional/fake]
+
+=== Case 2: recoverable intentional → RETRY ===
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 创建一个新的 Python 脚本文件，例如 `hello_error.py`。
+2. 在文件内容中，先写入一个故意选择的无效字符（如 `¤` 或一个 Emoji），使其紧挨 `print("hello world")` 语句之前，导致
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+​print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (37ms)
+  [Error] SyntaxError: invalid non-printable character U+200B
+  [Reflect] SyntaxError: A zero-width space (U+200B) precedes `print`, making it an invalid non-printable character
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] recoverable_intentional
+  [CodeGen #2] Regenerating... (A zero-width space (U+200B) precedes `print`, making it an invalid non-printable character)
+  [Code]
+------------------------------------------------------------
+print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (27ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       37ms         SyntaxError
+  2    OK         27ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   execution_recovered
+============================================================
+hello world
+============================================================
+  [saved: 4d47b54c]  [trace: runs/4d47b54c/trace.json]  [memory: RECOVERY]
+
+=== Case 3: genuine execution error → RETRY ===
+============================================================
+  Request: 用 python 计算 1/0
+============================================================
+
+  [Plan] 1. Define the numerator as 1 and the denominator as 0.
+2. Attempt to compute the division using the `/` operator.
+3. Han
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+try:
+    result = 1 / 0
+    print("1 / 0 =", result)
+except ZeroDivisionError as e:
+    print("计算 1 / 0 时发生错误:", e)
+    print("在 Python 中，除以零会引发 ZeroDivisionError 异常。")
+------------------------------------------------------------
+  [Exec #1] OK  (27ms)
+  [Eval]  score=50%  FAIL  1 check(s) failed  (no_error_in_output)
+  [Policy] RETRY (attempt 2)
+  [Reason] evaluation_failure
+  [CodeGen #2] Regenerating... (Execution succeeded)
+  [Code]
+------------------------------------------------------------
+try:
+    result = 1 / 0
+    print("Result:", result)
+except ZeroDivisionError:
+    print("1/0 is undefined (division by zero).")
+------------------------------------------------------------
+  [Exec #2] OK  (25ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         27ms         -
+  2    OK         25ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+1/0 is undefined (division by zero).
+============================================================
+  [saved: 10e41437]  [trace: runs/10e41437/trace.json]  [memory: skipped — intentional/fake]
+
+=== Case 4: clean path → ACCEPT ===
+============================================================
+  Request: 读取 sales.csv，统计 revenue 列平均值
+============================================================
+
+  [Plan] Read sales.csv into a data analysis tool (e.g., pandas DataFrame).
+Verify the revenue column is present and numeric; han
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+avg_revenue = df['revenue'].mean()
+print("Average revenue:", avg_revenue)
+------------------------------------------------------------
+  [Exec #1] OK  (855ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         855ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Average revenue: 7668.763548387097
+============================================================
+  [saved: 7f19db4a]  [trace: runs/7f19db4a/trace.json]  [memory: SUCCESS_PATTERN]
+
+=== Case 5: missing column → RETRY ===
+============================================================
+  Request: 读取 sales.csv，统计不存在的 profit 列
+============================================================
+
+  [Plan] Read sales.csv into a pandas DataFrame.
+Check the list of columns in the DataFrame for 'profit'.
+If 'profit' is missing,
+  [CodeGen #1] Generating initial code...
+  [Code] (16 lines)
+------------------------------------------------------------
+import pandas as pd
+
+try:
+    df = pd.read_csv('sales.csv')
+    print("Columns in sales.csv:")
+    print(df.columns.tolist())
+    print("\nFirst few rows:")
+    print(df.head())
+  ...
+        print("\n'profit' column does NOT exist.")
+        print(f"Number of rows missing profit data (all rows): {len(df)}")
+except FileNotFoundError:
+    print("Error: sales.csv not found.")
+------------------------------------------------------------
+  [Exec #1] OK  (497ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         497ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Columns in sales.csv:
+['date', 'revenue']
+
+First few rows:
+         date   revenue
+0  2026-05-01  10312.55
+1  2026-05-02   2325.14
+2  2026-05-03   5575.38
+3  2026-05-04   4901.74
+4  2026-05-05  11574.13
+
+'profit' column does NOT exist.
+Number of rows missing profit data (all rows): 31
+============================================================
+  [saved: 5d87e0d8]  [trace: runs/5d87e0d8/trace.json]  [memory: SUCCESS_PATTERN]
+
+============================================================
+  Classifier 7 Few-shot Unit Tests
+============================================================
+Case                           Expected                     Actual                       Match
+--------------------------------------------------------------------------------------------------
+���ⱨ��                           terminal_intentional         terminal_intentional         OK
+���������﷨����                       recoverable_intentional      recoverable_intentional      OK
+while True ��ѭ��                 timeout                      timeout                      OK
+print hello �﷨����               recoverable_intentional      recoverable_intentional      OK
+����������ַ�                        recoverable_intentional      recoverable_intentional      OK
+��ȡ sales ͳ�� profit             execution_error              execution_error              OK
+while True: pass ����ѭ��          timeout                      timeout                      OK
+csv ȱ����ƽ��ֵ                     evaluation_failure           evaluation_failure           OK
+
+============================================================
+  Pytest Integration Tests
+============================================================
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.3, pluggy-1.6.0 -- D:\Reforge\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Reforge
+plugins: anyio-4.13.0, langsmith-0.8.9
+collecting ... collected 3 items
+
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_recovers_from_error PASSED [ 33%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_success_first_try PASSED [ 66%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_retries_exhausted PASSED [100%]
+
+============================== 3 passed in 0.87s ==============================

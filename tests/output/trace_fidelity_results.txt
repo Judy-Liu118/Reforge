@@ -1,0 +1,129 @@
+============================================================
+  TRACE FIDELITY TEST RESULTS
+============================================================
+
+=== Outcome 1: SUCCESS ===
+  [saved: a2420af5]  [trace: runs/a2420af5/trace.json]
+
+================================================================
+  Session: a2420af5
+  Outcome: SUCCESS
+  Events:  11
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 1. 读取文件 sales.csv 2. 提取 revenue 列数据 3. 计算 revenue 列的平均值 4. 输
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 124 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (410ms)    [OK]         : exit_code=0, stdout=33 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Execution succeeded
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]       : All checks passed
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : Revenue 列平均值为: 7668.763548387097
+
+================================================================
+
+=== Outcome 2: RECOVERED ===
+  [saved: af9add97]  [trace: runs/af9add97/trace.json]
+
+================================================================
+  Session: af9add97
+  Outcome: RECOVERED
+  Events:  20
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 步骤1：选择一个不可识别的乱码字符，例如 Unicode 替换字符 '�' (U+FFFD)。 步骤2：编写 Pytho
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 98 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (41ms)     [FAIL]       : exit_code=1, stdout=0 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Invalid character '\ufffd' (U+FFFD) before `print` causes a syntax err
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]
+  ♻ RETRY_TRIGGERED                      [RETRY]      : retry_count=1
+  ··························································
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 20 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (30ms)     [OK]         : exit_code=0, stdout=12 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Execution succeeded
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]       : All checks passed
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : hello world
+
+================================================================
+
+=== Outcome 3: EXPECTED_FAILURE ===
+  [saved: 400118ee]  [trace: runs/400118ee/trace.json]
+
+================================================================
+  Session: 400118ee
+  Outcome: EXPECTED_FAILURE
+  Events:  11
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 1. Define a function inner_func that contains an intentional
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 537 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (60ms)     [FAIL]       : exit_code=1, stdout=0 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Intentional demo script dividing by zero to produce a traceback
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : Execution failed after 0 retries.  --- stderr --- Traceback
+
+================================================================
+
+=== Outcome 4: FAILED ===
+  [saved: 72f6aca4]  [trace: runs/72f6aca4/trace.json]
+
+================================================================
+  Session: 72f6aca4
+  Outcome: RECOVERED
+  Events:  29
+================================================================
+
+  --- Attempt 1 ---
+  ▶ PLAN_STARTED
+  ✅ PLAN_COMPLETED                                    : 1. 导入 pandas 库用于数据处理。   2. 定义文件路径为 "/tmp/nonexistent_xyz_dat
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 308 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (478ms)    [OK]         : exit_code=0, stdout=62 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Execution succeeded
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [FAIL]       : 1 check(s) failed
+  ♻ RETRY_TRIGGERED                      [RETRY]      : retry_count=1
+  ··························································
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 541 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (446ms)    [FAIL]       : exit_code=1, stdout=0 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Code attempts to write a CSV to non-existent directory '\tmp' instead
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]
+  ♻ RETRY_TRIGGERED                      [RETRY]      : retry_count=2
+  ··························································
+  ▶ CODEGEN_STARTED
+  ✅ CODEGEN_COMPLETED                                 : 312 chars of code
+  ▶ EXECUTION_STARTED
+  ⏰ EXECUTION_COMPLETED       (429ms)    [OK]         : exit_code=0, stdout=43 chars
+  ▶ REFLECTION_STARTED
+  🔍 REFLECTION_COMPLETED                              : Execution succeeded
+  ▶ EVALUATION_STARTED
+  📊 EVALUATION_COMPLETED                 [PASS]       : All checks passed
+  🏁 TASK_COMPLETED                       [TASK_SUCCESS] : 错误: 文件 '/tmp/nonexistent_xyz_data.csv' 不存在
+
+================================================================

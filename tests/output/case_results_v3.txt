@@ -1,0 +1,202 @@
+====== 场景1: traceback demo (task fidelity) ======
+
+============================================================
+  Request: 生成一个演示 traceback 的 Python 脚本
+============================================================
+
+  [Plan] Identify a simple error scenario that produces a clear traceback (e.g., division by zero).
+Design the script structure w
+  [CodeGen #1] Generating initial code...
+  [Code] (16 lines)
+------------------------------------------------------------
+print("This script will intentionally cause a ZeroDivisionError to display a traceback.")
+
+def level1():
+    print("Inside level1() - about to divide by zero")
+    return 1 / 0
+
+def level2():
+    print("Inside level2() - calling level1()")
+  ...
+    return level2()
+
+print("Calling level3()...\n")
+level3()
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (42ms)
+  [Error] ZeroDivisionError: division by zero
+  [Reflect] [INTENTIONAL-TERMINAL] ZeroDivisionError: division by zero in nested function calls to demonstrate traceback
+  [Eval]  score=100%  
+  [Retry]  -> terminal intentional, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       42ms         ZeroDivisionError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+This script will intentionally cause a ZeroDivisionError to display a traceback.
+Calling level3()...
+
+Inside level3() - calling level2()
+Inside level2() - calling level1()
+Inside level1() - about to divide by zero
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 16, in <module>
+    level3()
+    ~~~~~~^^
+  File "D:\Reforge\_script.py", line 13, in level3
+    return level2()
+  File "D:\Reforge\_script.py", line 9, in level2
+    return level1()
+  File "D:\Reforge\_script.py", line 5, in level1
+    return 1 / 0
+           ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: 088afec9]
+
+
+====== 场景2: 故意报错 (terminal) ======
+
+============================================================
+  Request: 写一个 Python 脚本打印 hello，然后故意让它报错
+============================================================
+
+  [Plan] 1. 编写 Python 脚本，使用 print 语句输出 "hello"。
+2. 在 print 语句之后添加一行会引发运行错误的代码，例如执行 1/0 造成 ZeroDivisionError。
+3. 保存并运行脚本，观察控制台先打印 
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise RuntimeError("Intentional error for demonstration")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (41ms)
+  [Error] RuntimeError: Intentional error for demonstration
+  [Reflect] [INTENTIONAL-TERMINAL] RuntimeError: Intentional error raised for demonstration
+  [Eval]  score=100%  
+  [Retry]  -> terminal intentional, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       41ms         RuntimeError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    raise RuntimeError("Intentional error for demonstration")
+RuntimeError: Intentional error for demonstration
+============================================================
+  [saved: 1a5d1100]
+
+
+====== 场景3: recoverable + constraint ======
+
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 打开一个 Python 代码编辑器或新建一个 .py 文件
+2. 输入以下内容：在 print("hello world") 这一行之前，插入一个无效的 Unicode 字符（例如 � 或某些不可见控制字符），确保该字符不是合法的 P
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+￼print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (38ms)
+  [Error] SyntaxError: invalid character '\ufffc' (U+FFFC)
+  [Reflect] [INTENTIONAL-RECOVERABLE] SyntaxError: 故意在 print 前插入 U+FFFC 字符导致语法错误
+  [Eval]  score=100%  
+  [Retry]  -> recoverable, retrying (attempt 2)
+  [CodeGen #2] Regenerating... (故意在 print 前插入 U+FFFC 字符导致语法错误)
+  [Code]
+------------------------------------------------------------
+print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (27ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       38ms         SyntaxError
+  2    OK         27ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+hello world
+============================================================
+  [saved: e7281195]
+
+
+====== 场景4: happy path ======
+
+============================================================
+  Request: 读取 sales.csv，统计 revenue 列的总和和平均值，打印结果
+============================================================
+  [happy_path] read file and compute statistics successfully
+
+  [Plan] 1. 导入 pandas 库。
+2. 读取 sales.csv 文件到 DataFrame。
+3. 检查 DataFrame 中是否存在 revenue 列。
+4. 计算 revenue 列的总和。
+5. 计算 revenue 列的平均值。
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+total = df['revenue'].sum()
+average = df['revenue'].mean()
+print(f"总和: {total}")
+print(f"平均值: {average}")
+------------------------------------------------------------
+  [Exec #1] OK  (413ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         413ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+总和: 237731.67
+平均值: 7668.763548387097
+============================================================
+  [saved: b4d7e2ed]

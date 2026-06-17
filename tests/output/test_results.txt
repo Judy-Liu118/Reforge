@@ -1,0 +1,205 @@
+====== 场景1: 故意报错 ======
+
+============================================================
+  Request: 写一个 Python 脚本打印 hello，然后故意让它报错
+============================================================
+
+  [Plan] Step 1: Create a new Python file with a .py extension or open a Python interactive shell.
+Step 2: Write a line of code t
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+1 / 0
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (172ms)
+  [Error] ZeroDivisionError: division by zero
+  [Reflect] [INTENTIONAL] ZeroDivisionError: Intentional division by zero after printing hello.
+  [Eval]  score=100%  
+  [Retry]  -> intentional error accepted, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       172ms        ZeroDivisionError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    1 / 0
+    ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: 8fabedcf]
+
+
+====== 场景2: traceback 演示 ======
+
+============================================================
+  Request: 生成一个演示 traceback 的 Python 脚本
+============================================================
+
+  [Plan] 1. Define multiple nested functions where the deepest one raises an exception (e.g., ZeroDivisionError).
+2. Call the out
+  [CodeGen #1] Generating initial code...
+  [Code] (19 lines)
+------------------------------------------------------------
+import sys
+
+def level3():
+    """最深层函数：故意触发 ZeroDivisionError"""
+    print("进入 level3，即将执行 1/0 ...")
+    return 1 / 0
+
+def level2():
+  ...
+    level1()
+
+if __name__ == "__main__":
+    main()
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (125ms)
+  [Error] ZeroDivisionError: division by zero
+  [Reflect] [INTENTIONAL] ZeroDivisionError: division by zero
+  [Eval]  score=100%  
+  [Retry]  -> intentional error accepted, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       125ms        ZeroDivisionError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+脚本开始，演示 traceback 调用链：main -> level1 -> level2 -> level3
+进入 level3，即将执行 1/0 ...
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 19, in <module>
+    main()
+    ~~~~^^
+  File "D:\Reforge\_script.py", line 16, in main
+    level1()
+    ~~~~~~^^
+  File "D:\Reforge\_script.py", line 12, in level1
+    return level2()
+  File "D:\Reforge\_script.py", line 9, in level2
+    return level3()
+  File "D:\Reforge\_script.py", line 6, in level3
+    return 1 / 0
+           ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: 56f0248f]
+
+
+====== 场景3: happy path ======
+
+============================================================
+  Request: 读取 sales.csv，统计 revenue 列的总和和平均值，打印结果
+============================================================
+  [happy_path] read file and compute statistics successfully
+
+  [Plan] 1. 读取 sales.csv 文件
+2. 提取 revenue 列的数据
+3. 处理可能的缺失值或非数值数据，确保列为数值类型
+4. 计算 revenue 列的总和
+5. 计算 revenue 列的平均值
+6. 打印总和与平均值的结果
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+# 读取 sales.csv
+df = pd.read_csv('sales.csv')
+
+# 计算 revenue 列的总和与平均值
+total_revenue = df['revenue'].sum()
+average_revenue = df['revenue'].mean()
+
+# 打印结果
+print(f"Revenue 总和: {total_revenue}")
+print(f"Revenue 平均值: {average_revenue}")
+------------------------------------------------------------
+  [Exec #1] OK  (542ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         542ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Revenue 总和: 237731.67
+Revenue 平均值: 7668.763548387097
+============================================================
+  [saved: 59694596]
+
+
+====== 场景4: retry recovery ======
+
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. Open a Python interpreter or create a new Python script file.
+2. Write a line that tries to print "hello world", but 
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+$print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (37ms)
+  [Error] SyntaxError: invalid syntax
+  [Reflect] [INTENTIONAL] SyntaxError: Intentional syntax error by adding `$` before `print`
+  [Eval]  score=100%  
+  [Retry]  -> intentional error accepted, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       37ms         SyntaxError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stderr ---
+  File "D:\Reforge\_script.py", line 1
+    $print("hello world")
+    ^
+SyntaxError: invalid syntax
+============================================================
+  [saved: e50fa6e0]

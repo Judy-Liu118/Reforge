@@ -1,0 +1,194 @@
+====== 场景1: 终端故意报错 (terminal) ======
+
+============================================================
+  Request: 写一个 Python 脚本打印 hello，然后故意让它报错
+============================================================
+
+  [Plan] Step 1: Create a new Python script file named hello_error.py.  
+Step 2: Write the code to print "hello" using the print 
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise Exception("Intentional error")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (212ms)
+  [Error] Exception: Intentional error
+  [Reflect] [INTENTIONAL-TERMINAL] Exception: Intentional exception raised after printing hello
+  [Eval]  score=100%  
+  [Retry]  -> terminal intentional, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       212ms        Exception
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    raise Exception("Intentional error")
+Exception: Intentional error
+============================================================
+  [saved: 324f8b69]
+
+
+====== 场景2: 可恢复故意错误 (recoverable) ======
+
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 确定 Python 环境中 print 函数的正确用法。
+2. 编写代码行: print("hello world")。
+3. 在 print 前插入一个无效的乱码字符（如 U+FFFD 或不可打印的控制字符）。
+4. 保存文件并确保
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello world")
+------------------------------------------------------------
+  [Exec #1] OK  (25ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         25ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+hello world
+============================================================
+  [saved: 13b00a83]
+
+
+====== 场景3: traceback 演示 (terminal) ======
+
+============================================================
+  Request: 生成一个演示 traceback 的 Python 脚本
+============================================================
+
+  [Plan] 1. 明确目标：编写一个 Python 脚本，展示异常追踪信息的输出。
+2. 设计一个简单的函数，内部触发错误（如除零错误）。
+3. 在主脚本中调用该函数，并用 try 语句包裹。
+4. 导入 traceback 模块，在 except 块
+  [CodeGen #1] Generating initial code...
+  [Code] (17 lines)
+------------------------------------------------------------
+print("演示 Python Traceback 的脚本开始运行...")
+print("调用链：level1 -> level2 -> level3 -> 触发 ZeroDivisionError")
+
+def level3():
+    print("进入 level3，准备计算 1 / 0")
+    return 1 / 0
+
+def level2():
+  ...
+    return level2()
+
+level1()
+print("这行不会被执行，因为异常未被捕获")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (43ms)
+  [Error] ZeroDivisionError: division by zero
+  [Reflect] [INTENTIONAL-TERMINAL] ZeroDivisionError: Intentional division by zero to demonstrate a traceback in nested function calls.
+  [Eval]  score=100%  
+  [Retry]  -> terminal intentional, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       43ms         ZeroDivisionError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+演示 Python Traceback 的脚本开始运行...
+调用链：level1 -> level2 -> level3 -> 触发 ZeroDivisionError
+进入 level1，调用 level2
+进入 level2，调用 level3
+进入 level3，准备计算 1 / 0
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 16, in <module>
+    level1()
+    ~~~~~~^^
+  File "D:\Reforge\_script.py", line 14, in level1
+    return level2()
+  File "D:\Reforge\_script.py", line 10, in level2
+    return level3()
+  File "D:\Reforge\_script.py", line 6, in level3
+    return 1 / 0
+           ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: 9e9e8e5a]
+
+
+====== 场景4: happy path ======
+
+============================================================
+  Request: 读取 sales.csv，统计 revenue 列的总和和平均值，打印结果
+============================================================
+  [happy_path] read file and compute statistics successfully
+
+  [Plan] 1. 读取 sales.csv 文件
+2. 提取 revenue 列数据
+3. 计算 revenue 列的总和
+4. 计算 revenue 列的平均值
+5. 打印总和和平均值
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+total_revenue = df['revenue'].sum()
+average_revenue = df['revenue'].mean()
+
+print(f"总收入: {total_revenue}")
+print(f"平均收入: {average_revenue}")
+------------------------------------------------------------
+  [Exec #1] OK  (783ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         783ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+总收入: 237731.67
+平均收入: 7668.763548387097
+============================================================
+  [saved: d400f51a]

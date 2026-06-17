@@ -1,0 +1,256 @@
+============================================================
+  RetryContext Verification
+============================================================
+
+=== 1. Pytest ===
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.3, pluggy-1.6.0 -- D:\Reforge\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Reforge
+plugins: anyio-4.13.0, langsmith-0.8.9
+collecting ... collected 3 items
+
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_recovers_from_error PASSED [ 33%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_success_first_try PASSED [ 66%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_retries_exhausted PASSED [100%]
+
+============================== 3 passed in 0.89s ==============================
+
+=== 2. Rich Prompt Unit Test ===
+Original task:
+sales.csv revenue average
+
+Previous code (attempt 2):
+df = pd.read_csv("sales.csv")
+print(df["profit"].mean())
+
+Execution error:
+KeyError: profit
+
+Root cause:
+profit column missing
+
+Retry reason: execution_error
+
+Please regenerate improved code that fixes the issue while preserving the original task.
+
+=== 3. Case 1: KeyError retry ===
+============================================================
+  Request: read sales.csv, calculate profit column total
+============================================================
+
+  [Plan] 1. Load the sales.csv file into a DataFrame.
+2. Confirm the presence of the 'profit' column.
+3. Sum all values in the pr
+  [CodeGen #1] Generating initial code...
+  [Code] (14 lines)
+------------------------------------------------------------
+import pandas as pd
+
+try:
+    df = pd.read_csv('sales.csv')
+    print("Data loaded. First rows:")
+    print(df.head())
+    
+    if 'profit' in df.columns:
+  ...
+    else:
+        print("No 'profit' column found. Available columns:", df.columns.tolist())
+except FileNotFoundError:
+    print("sales.csv not found.")
+------------------------------------------------------------
+  [Exec #1] OK  (430ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         430ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Data loaded. First rows:
+         date   revenue
+0  2026-05-01  10312.55
+1  2026-05-02   2325.14
+2  2026-05-03   5575.38
+3  2026-05-04   4901.74
+4  2026-05-05  11574.13
+No 'profit' column found. Available columns: ['date', 'revenue']
+============================================================
+  [saved: ba972da8]  [trace: runs/ba972da8/trace.json]  [memory: SUCCESS_PATTERN]
+
+=== 4. Case 2: recoverable ===
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 创建一个 Python 代码文件，内容为正常打印 "hello world"。
+2. 在 print 关键字前插入一个无效或不可见的乱码字符，例如零宽度空格 (U+200B) 或控制字符，导致 Python 解释器无法识别。
+3. 运
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+​print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (38ms)
+  [Error] SyntaxError: invalid non-printable character U+200B
+  [Reflect] SyntaxError: Zero-width space (U+200B) before print causes invalid non-printable character syntax error.
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] recoverable_intentional
+  [CodeGen #2] Regenerating... (Zero-width space (U+200B) before print causes invalid non-printable character syntax error.)
+  [Code]
+------------------------------------------------------------
+code_with_bad_char = "\u200bprint('hello world')"
+try:
+    exec(code_with_bad_char)
+except SyntaxError as e:
+    print("故意制造的错误:", e)
+print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (27ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       38ms         SyntaxError
+  2    OK         27ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   execution_recovered
+============================================================
+故意制造的错误: invalid non-printable character U+200B (<string>, line 1)
+hello world
+============================================================
+  [saved: 7ee1009b]  [trace: runs/7ee1009b/trace.json]  [memory: RECOVERY]
+
+=== 5. Case 3: clean success ===
+============================================================
+  Request: read sales.csv, calculate revenue average
+============================================================
+
+  [Plan] 1. Load the sales.csv file into a data structure, such as a pandas DataFrame.
+2. Inspect the data to ensure a column nam
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+df.columns = df.columns.str.lower()
+if 'revenue' in df.columns:
+    avg = df['revenue'].mean()
+    print(f"Average revenue: {avg:,.2f}")
+else:
+    print("No 'revenue' column found. Columns:", df.columns.tolist())
+------------------------------------------------------------
+  [Exec #1] OK  (443ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         443ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Average revenue: 7,668.76
+============================================================
+  [saved: f2e76ecb]  [trace: runs/f2e76ecb/trace.json]  [memory: SUCCESS_PATTERN]
+
+=== 6. Case 4: terminal intentional ===
+============================================================
+  Request: print hello then raise an error intentionally
+============================================================
+
+  [Plan] 1. Print the string "hello" to the console or log.
+2. Intentionally raise an error (e.g., ValueError or RuntimeError) to
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise Exception("Intentional error raised as requested.")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (41ms)
+  [Error] Exception: Intentional error raised as requested.
+  [Reflect] Exception: The script explicitly raises an Exception with a custom message, causing an unhandled exception and traceback.
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] execution_error
+  [CodeGen #2] Regenerating... (The script explicitly raises an Exception with a custom message, causing an unhandled exception and traceback.)
+  [Code]
+------------------------------------------------------------
+print("hello")
+try:
+    raise Exception("Intentional error raised as requested.")
+except Exception as e:
+    print(f"Error handled: {e}")
+------------------------------------------------------------
+  [Exec #2] OK  (26ms)
+  [Eval]  score=50%  FAIL  1 check(s) failed  (no_error_in_output)
+  [Policy] RETRY (attempt 3)
+  [Reason] evaluation_failure
+  [CodeGen #3] Regenerating... (Execution succeeded)
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise Exception("Intentional error raised as requested.")
+------------------------------------------------------------
+  [Exec #3] FAIL  exit_code=1  (41ms)
+  [Error] Exception: Intentional error raised as requested.
+  [Reflect] Exception: The script explicitly raises an unhandled Exception, causing runtime termination.
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 4)
+  [Reason] execution_error
+  [CodeGen #4] Regenerating... (The script explicitly raises an unhandled Exception, causing runtime termination.)
+  [Code]
+------------------------------------------------------------
+print("hello")
+try:
+    raise Exception("Intentional error raised as requested.")
+except Exception as e:
+    print("Intentionally raised error caught:", str(e))
+------------------------------------------------------------
+  [Exec #4] OK  (26ms)
+  [Eval]  score=50%  FAIL  1 check(s) failed  (no_error_in_output)
+  [Policy] STOP
+  [Reason] retry_limit_reached_on_eval_fail
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       41ms         Exception
+  2    OK         26ms         -
+  3    FAIL       41ms         Exception
+  4    OK         26ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   execution_recovered
+============================================================
+hello
+Intentionally raised error caught: Intentional error raised as requested.
+============================================================
+  [saved: 477847bc]  [trace: runs/477847bc/trace.json]  [memory: RECOVERY]

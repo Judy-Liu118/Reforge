@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime data
+runs/
+data/
+sandbox/tmp/
+.reforge/
+
+# Local tooling state (Claude Code, etc.)
+.claude/
+
+# Archives
+runs_archive_*.zip
+data_memory_polluted_*.zip

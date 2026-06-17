@@ -1,0 +1,180 @@
+====== 场景1: 可恢复故意错误 (recoverable + process constraint) ======
+
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 确定一个会导致 Python 语法错误的乱码字符（例如不可见控制字符、非法标点或非 ASCII 字符，如 `�`、`\x00` 等）。
+2. 创建一个 Python 脚本，内容为：该字符 + `print("hello world")
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+ज print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (40ms)
+  [Error] SyntaxError: invalid syntax
+  [Reflect] [INTENTIONAL-RECOVERABLE] SyntaxError: Invalid syntax due to garbled character `\u091c` before print
+  [Eval]  score=100%  
+  [Retry]  -> recoverable, retrying (attempt 2)
+  [CodeGen #2] Regenerating... (Invalid syntax due to garbled character `\u091c` before print)
+  [Code]
+------------------------------------------------------------
+print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (26ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       40ms         SyntaxError
+  2    OK         26ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+hello world
+============================================================
+  [saved: 8a9c1589]
+
+
+====== 场景2: 终端故意报错 (terminal) ======
+
+============================================================
+  Request: 写一个 Python 脚本打印 hello，然后故意让它报错
+============================================================
+
+  [Plan] 1. 编写 Python 脚本，使用 `print("hello")` 输出 hello。
+2. 添加一行故意引发错误的代码，例如 `1/0` 或引用未定义变量 `x`。
+3. 确保脚本在打印后立即出错，以观察输出与错误信息。
+4. 保存脚
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+# Deliberately cause an error by dividing by zero
+1 / 0
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (41ms)
+  [Error] ZeroDivisionError: division by zero
+  [Reflect] [INTENTIONAL-TERMINAL] ZeroDivisionError: Division by zero after printing "hello"
+  [Eval]  score=100%  
+  [Retry]  -> terminal intentional, not retrying
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       41ms         ZeroDivisionError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   intentional_failure_accepted
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 3, in <module>
+    1 / 0
+    ~~^~~
+ZeroDivisionError: division by zero
+============================================================
+  [saved: 8cf4d82e]
+
+
+====== 场景3: traceback 演示 (terminal) ======
+
+============================================================
+  Request: 生成一个演示 traceback 的 Python 脚本
+============================================================
+
+  [Plan] Create a Python script that demonstrates a traceback by raising an exception through multiple nested function calls.
+
+St
+  [CodeGen #1] Generating initial code...
+  [Code] (20 lines)
+------------------------------------------------------------
+import sys
+
+def level3():
+    # 故意触发一个除零错误来生成 traceback
+    return 1 / 0
+
+def level2():
+    return level3()
+  ...
+        # 捕获异常并打印 traceback
+        import traceback
+        print("发生异常，traceback 信息如下：")
+        traceback.print_exc()
+------------------------------------------------------------
+  [Exec #1] OK  (42ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         42ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+发生异常，traceback 信息如下：
+============================================================
+  [saved: 6a99acdb]
+
+
+====== 场景4: happy path ======
+
+============================================================
+  Request: 读取 sales.csv，统计 revenue 列的总和和平均值，打印结果
+============================================================
+  [happy_path] read file and compute statistics successfully
+
+  [Plan] Read the file sales.csv into a data structure.
+Extract the "revenue" column.
+Compute the sum of the revenue values.
+Comp
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+total = df['revenue'].sum()
+average = df['revenue'].mean()
+
+print(f"Revenue 总和: {total}")
+print(f"Revenue 平均值: {average}")
+------------------------------------------------------------
+  [Exec #1] OK  (426ms)
+  [Eval]  score=100%  All checks passed
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         426ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+Revenue 总和: 237731.67
+Revenue 平均值: 7668.763548387097
+============================================================
+  [saved: 26bf842c]

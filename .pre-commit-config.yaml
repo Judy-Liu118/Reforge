@@ -1,0 +1,34 @@
+# pre-commit hooks for Reforge.
+# Install once with `pre-commit install` (after `pip install pre-commit`).
+# Tries to be cheap: hygiene + ruff + pytest --collect-only (NOT a full run).
+# The full test matrix runs in CI; this is the local "don't commit obvious
+# breakage" net.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+
+  - repo: local
+    hooks:
+      - id: pytest-collect
+        name: pytest --collect-only (smoke)
+        entry: python -m pytest --collect-only -q
+        language: system
+        pass_filenames: false
+        types: [python]
+        # Only runs when at least one .py changed; cheap (~1 s) but catches
+        # import-time errors and broken fixtures before they hit CI.

@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reforge"
+version = "0.1.0"
+description = "Self-healing Python execution runtime with governance-first design and MCP-native skill abstraction."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Reforge Project" }]
+keywords = [
+    "agent",
+    "runtime",
+    "llm",
+    "langgraph",
+    "mcp",
+    "skill",
+    "self-healing",
+    "event-sourced",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "langgraph>=0.2.0",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+reforge = "reforge.cli.main:main"
+reforge-eda = "reforge.runtime.eda.__main__:main"
+reforge-sql = "reforge.runtime.sql.__main__:main"
+reforge-hpo = "reforge.runtime.hpo.__main__:main"
+reforge-benchmark = "reforge.benchmark.__main__:main"
+
+[project.urls]
+Documentation = "https://github.com/your-org/reforge#readme"
+Source = "https://github.com/your-org/reforge"
+
+[tool.setuptools.packages.find]
+include = ["reforge*"]
+exclude = ["reforge.tests*", "tests*", "scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["reforge/tests"]
+python_files = ["test_*.py"]
+addopts = ["-q", "--strict-markers"]
+markers = [
+    "docker: marks tests that require a working docker daemon (skipped otherwise)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

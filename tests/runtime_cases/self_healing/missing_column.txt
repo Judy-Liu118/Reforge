@@ -1,0 +1,4 @@
+# case_name: missing_column
+# category: self_healing
+# expected_behavior: first attempt fails with KeyError on non-existent column, reflection catches it, retry fixes column name
+读取 sales.csv，统计 profit 列的平均值

@@ -1,0 +1,286 @@
+============================================================
+  OutcomeResolver — Test Report
+============================================================
+
+=== 1. Unit Tests (23 total) ===
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.3, pluggy-1.6.0 -- D:\Reforge\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Reforge
+plugins: anyio-4.13.0, langsmith-0.8.9
+collecting ... collected 23 items
+
+reforge/tests/test_outcome_resolver.py::test_expected_error PASSED       [  4%]
+reforge/tests/test_outcome_resolver.py::test_traceback_demo PASSED       [  8%]
+reforge/tests/test_outcome_resolver.py::test_stress_test_success PASSED  [ 13%]
+reforge/tests/test_outcome_resolver.py::test_recoverable_demo PASSED     [ 17%]
+reforge/tests/test_outcome_resolver.py::test_normal_timeout_failed PASSED [ 21%]
+reforge/tests/test_outcome_resolver.py::test_normal_success PASSED       [ 26%]
+reforge/tests/test_outcome_resolver.py::test_retries_exhausted PASSED    [ 30%]
+reforge/tests/test_outcome_resolver.py::test_normal_recovered PASSED     [ 34%]
+reforge/tests/test_policy_with_intent.py::test_expected_error_stops PASSED [ 39%]
+reforge/tests/test_policy_with_intent.py::test_traceback_demo_stops PASSED [ 43%]
+reforge/tests/test_policy_with_intent.py::test_recoverable_demo_retries PASSED [ 47%]
+reforge/tests/test_policy_with_intent.py::test_stress_test_stops PASSED  [ 52%]
+reforge/tests/test_policy_with_intent.py::test_normal_execution_retries_on_error PASSED [ 56%]
+reforge/tests/test_policy_with_intent.py::test_normal_execution_accepts_on_success PASSED [ 60%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_recovers_from_error PASSED [ 65%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_success_first_try PASSED [ 69%]
+reforge/tests/test_retry_loop.py::TestRetryLoop::test_retries_exhausted PASSED [ 73%]
+reforge/tests/test_task_intent.py::test_expected_error PASSED            [ 78%]
+reforge/tests/test_task_intent.py::test_traceback_demo PASSED            [ 82%]
+reforge/tests/test_task_intent.py::test_recoverable_demo PASSED          [ 86%]
+reforge/tests/test_task_intent.py::test_normal_execution PASSED          [ 91%]
+reforge/tests/test_task_intent.py::test_stress_test PASSED               [ 95%]
+reforge/tests/test_task_intent.py::test_sandbox_escape PASSED            [100%]
+
+============================= 23 passed in 0.91s ==============================
+
+=== 2. STRESS_TEST -> SUCCESS ===
+============================================================
+  Request: write a while True infinite loop
+============================================================
+
+  [Plan] 1. Determine the programming language (e.g., Python).
+2. Write the keyword "while" followed by the condition "True" and 
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import time
+
+while True:
+    print("This is an infinite loop. Press Ctrl+C to stop.")
+    time.sleep(1)
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=-1  (30006ms)
+  [Error] Execution timed out after 30s
+  [Reflect] TimeoutError: The program contains an infinite while loop with no exit condition, resulting in indefinite execution.
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] timeout
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       30006ms      UnknownError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Outcome]      SUCCESS
+  [Reason]             task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stderr ---
+Execution timed out after 30s
+============================================================
+  [saved: 78a26136]  [trace: runs/78a26136/trace.json]  [memory: skipped — intentional/fake]
+
+=== 3. EXPECTED_ERROR -> EXPECTED_FAILURE ===
+============================================================
+  Request: print hello and intentionally raise an error
+============================================================
+
+  [Plan] Print the string "hello" to the console.
+Intentionally raise an error, such as a ValueError, to simulate a failure.
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise Exception("Intentional error")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (42ms)
+  [Error] Exception: Intentional error
+  [Reflect] Exception: Explicit raise Exception("Intentional error") was not caught, causing an unhandled runtime error
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] terminal_intentional_failure
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       42ms         Exception
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Outcome]      EXPECTED_FAILURE
+  [Reason]             task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    raise Exception("Intentional error")
+Exception: Intentional error
+============================================================
+  [saved: 5fd9b1c3]  [trace: runs/5fd9b1c3/trace.json]  [memory: skipped — intentional/fake]
+
+=== 4. RECOVERABLE_DEMO -> RECOVERED ===
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 准备一个 Python 脚本文件，命名为 `hello_error.py`。
+2. 在文件中插入一个非法的乱码字符（如 `�` 或任何不在 ASCII 范围内的无效符号），直接放在 `print("hello world")` 语句的
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+​print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (38ms)
+  [Error] SyntaxError: invalid non-printable character U+200B
+  [Reflect] SyntaxError: A zero-width space character (U+200B) before `print` causes an invalid non-printable character error.
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] recoverable_intentional
+  [CodeGen #2] Regenerating... (A zero-width space character (U+200B) before `print` causes an invalid non-printable character error.)
+  [Code]
+------------------------------------------------------------
+malformed_code = '\u200bprint("hello world")'
+try:
+    exec(malformed_code)
+except SyntaxError as e:
+    print("Got intentional syntax error:", e)
+print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (26ms)
+  [Eval]  score=50%  FAIL  1 check(s) failed  (no_error_in_output)
+  [Policy] RETRY (attempt 3)
+  [Reason] recoverable_intentional
+  [CodeGen #3] Regenerating... (Execution succeeded)
+  [Code]
+------------------------------------------------------------
+malformed_code = '\u200bprint("hello world")'
+try:
+    exec(malformed_code)
+except SyntaxError:
+    print("hello world")
+------------------------------------------------------------
+  [Exec #3] OK  (26ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       38ms         SyntaxError
+  2    OK         26ms         -
+  3    OK         26ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Outcome]      RECOVERED
+  [Reason]             execution_recovered
+============================================================
+hello world
+============================================================
+  [saved: 63995bd4]  [trace: runs/63995bd4/trace.json]  [memory: RECOVERY]
+
+=== 5. NORMAL_EXECUTION -> SUCCESS ===
+============================================================
+  Request: read sales.csv, calculate revenue average
+============================================================
+
+  [Plan] - Read the sales.csv file.
+- Identify the column containing revenue data.
+- Compute the average of the revenue column.
+-
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+df = pd.read_csv('sales.csv')
+print("Data preview:")
+print(df.head())
+if 'revenue' not in df.columns:
+    print("Error: 'revenue' column not found in sales.csv")
+else:
+    revenue_avg = df['revenue'].mean()
+    print("\nRevenue average:", round(revenue_avg, 2))
+------------------------------------------------------------
+  [Exec #1] OK  (423ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         423ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Outcome]      SUCCESS
+  [Reason]             clean_execution
+============================================================
+Data preview:
+         date   revenue
+0  2026-05-01  10312.55
+1  2026-05-02   2325.14
+2  2026-05-03   5575.38
+3  2026-05-04   4901.74
+4  2026-05-05  11574.13
+
+Revenue average: 7668.76
+============================================================
+  [saved: dadded70]  [trace: runs/dadded70/trace.json]  [memory: SUCCESS_PATTERN]
+
+=== 6. NORMAL_EXECUTION error -> FAILED ===
+============================================================
+  Request: write python that reads a corrupt binary file as text and crashes
+============================================================
+
+  [Plan] 1. Generate a corrupt binary file with non-text bytes (e.g., random bytes) using a tool or script.
+2. Write a Python scr
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import sys
+print("Attempting to read Python interpreter binary as text...")
+with open(sys.executable, 'r', encoding='utf-8') as f:
+    data = f.read()
+print("This line will not be reached")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (43ms)
+  [Error] UnicodeDecodeError: 'utf-8' codec can't decode byte 0x90 in position 2: invalid start byte
+  [Reflect] UnicodeDecodeError: Reading a binary file with default text mode ('r') and UTF-8 encoding fails on non-UTF-8 bytes.
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] terminal_intentional_failure
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       43ms         UnicodeDecodeError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Outcome]      EXPECTED_FAILURE
+  [Reason]             task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+Attempting to read Python interpreter binary as text...
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 4, in <module>
+    data = f.read()
+  File "<frozen codecs>", line 325, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x90 in position 2: invalid start byte
+============================================================
+  [saved: 5eb37a5f]  [trace: runs/5eb37a5f/trace.json]  [memory: skipped — intentional/fake]

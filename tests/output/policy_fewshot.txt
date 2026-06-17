@@ -1,0 +1,195 @@
+============================================================
+  Policy Engine — 4 Few-shot Cases
+============================================================
+
+=== Case 1: INTENTIONAL TERMINAL → STOP ===
+============================================================
+  Request: 打印 hello，然后故意报错
+============================================================
+
+  [Plan] Step 1: Open a Python script or interactive environment.
+Step 2: Write a print statement to output "hello".
+Step 3: Imme
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("hello")
+raise RuntimeError("Intentional error for demonstration")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (40ms)
+  [Error] RuntimeError: Intentional error for demonstration
+  [Reflect] [INTENTIONAL-TERMINAL] RuntimeError: Code intentionally raises RuntimeError to demonstrate error handling.
+  [Eval]  score=100%  
+  [Policy] STOP
+  [Reason] terminal_intentional_failure
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       40ms         RuntimeError
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  FAILED
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   task_fidelity_achieved
+============================================================
+Execution failed after 0 retries.
+
+--- stdout ---
+hello
+
+
+--- stderr ---
+Traceback (most recent call last):
+  File "D:\Reforge\_script.py", line 2, in <module>
+    raise RuntimeError("Intentional error for demonstration")
+RuntimeError: Intentional error for demonstration
+============================================================
+  [saved: e49a059a]  [trace: runs/e49a059a/trace.json]  [memory: skipped — intentional/fake]
+
+=== Case 2: INTENTIONAL RECOVERABLE → RETRY ===
+============================================================
+  Request: 用 python 打印 hello world，但故意在 print 前面加一个乱码字符让语法出错
+============================================================
+  [reflection] first attempt fails with SyntaxError, reflection identifies issue, retry succeeds
+
+  [Plan] 1. 准备Python环境（安装Python解释器，确保可命令行运行）。
+2. 编写一个Python脚本（例如 `hello_error.py`），内容为在 `print("hello world")` 前插入一个无效字符，如零宽空格（U+
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+​print("hello world")
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (36ms)
+  [Error] SyntaxError: invalid non-printable character U+200B
+  [Reflect] [INTENTIONAL-RECOVERABLE] SyntaxError: Invalid non-printable character U+200B (zero-width space) before print statement
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] recoverable_intentional_failure
+  [CodeGen #2] Regenerating... (Invalid non-printable character U+200B (zero-width space) before print statement)
+  [Code]
+------------------------------------------------------------
+print("hello world")
+------------------------------------------------------------
+  [Exec #2] OK  (26ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       36ms         SyntaxError
+  2    OK         26ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   execution_recovered
+============================================================
+hello world
+============================================================
+  [saved: 89a0bc41]  [trace: runs/89a0bc41/trace.json]  [memory: RECOVERY]
+
+=== Case 3: EVAL FAIL → RETRY ===
+============================================================
+  Request: 用 python 计算 1/0
+============================================================
+
+  [Plan] 1. Write Python code to compute the division: result = 1 / 0.
+2. Execute the code and observe the ZeroDivisionError exce
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+print("尝试计算 1/0：")
+try:
+    result = 1/0
+    print("整数除法 1/0 结果:", result)
+except ZeroDivisionError as e:
+    print("整数除法 1/0 抛出异常:", e)
+
+print("\n浮点数除法 1.0/0.0：")
+result_float = 1.0/0.0
+print("1.0/0.0 =", result_float)
+print("类型:", type(result_float).__name__)
+------------------------------------------------------------
+  [Exec #1] FAIL  exit_code=1  (41ms)
+  [Error] ZeroDivisionError: float division by zero
+  [Reflect] ZeroDivisionError: Float division by zero (1.0/0.0) due to denominator being zero.
+  [Eval]  score=100%  
+  [Policy] RETRY (attempt 2)
+  [Reason] execution_error
+  [CodeGen #2] Regenerating... (Float division by zero (1.0/0.0) due to denominator being zero.)
+  [Code]
+------------------------------------------------------------
+try:
+    result = 1/0
+except ZeroDivisionError:
+    result = float('inf')
+print("1/0 =", result)
+------------------------------------------------------------
+  [Exec #2] OK  (28ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    FAIL       41ms         ZeroDivisionError
+  2    OK         28ms         -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   execution_recovered
+============================================================
+1/0 = inf
+============================================================
+  [saved: 4bafd141]  [trace: runs/4bafd141/trace.json]  [memory: RECOVERY]
+
+=== Case 4: EXEC OK + EVAL PASS → ACCEPT ===
+============================================================
+  Request: 读取 sales.csv，统计 revenue 列总和和平均值
+============================================================
+
+  [Plan] 1. 读取 sales.csv 文件。
+2. 检查数据是否包含 revenue 列。
+3. 计算 revenue 列的总和。
+4. 计算 revenue 列的平均值。
+5. 输出总和和平均值。
+  [CodeGen #1] Generating initial code...
+  [Code]
+------------------------------------------------------------
+import pandas as pd
+
+df = pd.read_csv('sales.csv')
+total = df['revenue'].sum()
+avg = df['revenue'].mean()
+
+print(f"总和: {total}")
+print(f"平均值: {avg}")
+------------------------------------------------------------
+  [Exec #1] OK  (439ms)
+  [Eval]  score=100%  All checks passed
+  [Policy] ACCEPT
+  [Reason] execution_accepted
+------------------------------------------------------------
+  Execution Summary
+  #    Status     Duration     Error
+  --------------------------------------------------
+  1    OK         439ms        -
+------------------------------------------------------------
+
+============================================================
+  [Execution Status]  OK
+  [Task Decision]     TASK_SUCCESS
+  [Decision Reason]   clean_execution
+============================================================
+总和: 237731.67
+平均值: 7668.763548387097
+============================================================
+  [saved: 0d727f61]  [trace: runs/0d727f61/trace.json]  [memory: SUCCESS_PATTERN]

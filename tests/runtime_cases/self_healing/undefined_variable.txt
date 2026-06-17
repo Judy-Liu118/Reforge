@@ -1,0 +1,4 @@
+# case_name: undefined_variable
+# category: self_healing
+# expected_behavior: first attempt fails with NameError on undefined variable, retry defines it
+用 python 计算 total = price * quantity，然后打印 total
