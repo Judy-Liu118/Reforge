@@ -365,7 +365,12 @@ class TestStepTimingPrint:
 
 class TestAutoRegistration:
     def test_registered_when_playwright_available(self) -> None:
-        # In this dev environment playwright IS installed.
+        # Auto-registration probes for playwright at import time and skips
+        # the skill if it's not installed. Bare CI installs don't have
+        # playwright (it isn't in pyproject [test] extras), so this test
+        # would false-negative there — skip when playwright is genuinely
+        # absent and the test would not be meaningful.
+        pytest.importorskip("playwright", reason="playwright not installed")
         reg = default_skill_registry(include_web_search=False, include_vision=False)
         assert reg.get("web_screenshot") is not None
 

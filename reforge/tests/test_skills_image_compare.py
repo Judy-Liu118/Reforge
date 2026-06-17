@@ -163,13 +163,19 @@ class TestInvoke:
 
 
 class TestDownscale:
-    """Oversized user-supplied screenshots get auto-shrunk before encoding."""
+    """Oversized user-supplied screenshots get auto-shrunk before encoding.
+
+    Pillow is an optional dependency of the runtime — _maybe_downscale
+    short-circuits when PIL isn't importable. The test itself USES PIL to
+    construct a too-large PNG, so the whole class is skipped on bare CI
+    installs that don't have Pillow.
+    """
 
     def _big_png(self, tmp_path: Path, width: int = 2400, height: int = 1500) -> Path:
         """Generate a wide PNG over the downscale threshold. Random pixels
         defeat PNG compression so the file size honestly exceeds 500KB."""
         import os
-        from PIL import Image
+        Image = pytest.importorskip("PIL.Image", reason="Pillow not installed")
         img = Image.frombytes("RGB", (width, height), os.urandom(width * height * 3))
         out = tmp_path / "big.png"
         img.save(out, format="PNG", optimize=False)

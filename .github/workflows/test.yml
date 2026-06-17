@@ -35,6 +35,13 @@ jobs:
 
       - name: Run pytest
         env:
+          # LLMClient passes config.llm_api_key explicitly to OpenAI(); on CI
+          # without a .env file that value is "" which the OpenAI SDK rejects
+          # at construction time (won't fall back to env vars when an empty
+          # string is passed). Set LLM_API_KEY alongside OPENAI_API_KEY so
+          # both code paths get a dummy value sufficient for non-network
+          # construction in tests that build a real LLMClient.
+          LLM_API_KEY: "dummy-for-unit-tests"
           OPENAI_API_KEY: "dummy-for-unit-tests"
           REFORGE_DISABLE_LLM: "1"
         run: |

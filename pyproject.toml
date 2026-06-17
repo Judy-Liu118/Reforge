@@ -57,8 +57,8 @@ reforge-hpo = "reforge.runtime.hpo.__main__:main"
 reforge-benchmark = "reforge.benchmark.__main__:main"
 
 [project.urls]
-Documentation = "https://github.com/your-org/reforge#readme"
-Source = "https://github.com/your-org/reforge"
+Documentation = "https://github.com/Judy-Liu118/Reforge#readme"
+Source = "https://github.com/Judy-Liu118/Reforge"
 
 [tool.setuptools.packages.find]
 include = ["reforge*"]

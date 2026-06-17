@@ -1,7 +1,6 @@
 # Reforge
 
-<!-- After pushing to GitHub, replace <your-org>/reforge with the real path so the CI badge resolves. -->
-[![Tests](https://github.com/your-org/reforge/actions/workflows/test.yml/badge.svg)](https://github.com/your-org/reforge/actions/workflows/test.yml)
+[![Tests](https://github.com/Judy-Liu118/Reforge/actions/workflows/test.yml/badge.svg)](https://github.com/Judy-Liu118/Reforge/actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-1767%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
