@@ -38,7 +38,16 @@ def global_dir() -> Path:
 
 
 def project_dir() -> Path:
-    """Return the per-project Reforge dir under the current working dir."""
+    """Return the per-project Reforge dir under the current working dir.
+
+    Honours ``REFORGE_PROJECT_DIR`` first — used by isolation harnesses
+    (e.g. the Experience Memory Benchmark driver) that need to run each
+    case against a fresh `.reforge/` ledger without `chdir`-ing the whole
+    process.
+    """
+    override = os.environ.get("REFORGE_PROJECT_DIR")
+    if override:
+        return Path(override).expanduser()
     return Path.cwd() / ".reforge"
 
 
