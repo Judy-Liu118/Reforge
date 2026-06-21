@@ -3,8 +3,7 @@
 > This file consolidates `ARCHITECTURE.md`, `TASKS.md`, `RUNTIME_ARCHITECTURE_REVIEW.md`,
 > `docs/ARCHITECTURE_VISION.md`, `docs/RESEARCH_RUNTIME_ROADMAP.md`,
 > and `docs/RUNTIME_REVIEW.md` into a single historical archive. The live,
-> normative docs are now: `README.md`, `CLAUDE.md`, `OWNERSHIP.md`,
-> `DAILY_TASKS.md`.
+> normative docs are now: `README.md`, `CLAUDE.md`, `OWNERSHIP.md`.
 
 ---
 
@@ -133,7 +132,7 @@ Not a feature-completeness problem — a substrate-stabilisation problem.
 
 ### Open Architectural Direction
 
-Remaining migration (tracked in `DAILY_TASKS.md` LATER):
+Remaining migration (tracked via `ExecutionEvent` additions; `RuntimeState` is frozen):
 
 > RuntimeState → event projection.
 > Steps: all new state goes to ExecutionEvent → graph nodes emit alongside

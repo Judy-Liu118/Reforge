@@ -185,7 +185,8 @@ of `RuntimeState` from events alone — used by the consistency validator
 drifts away from what events recorded.
 
 This is the foundation for the long-term migration to event-sourced
-RuntimeState (LATER in `DAILY_TASKS.md`).
+RuntimeState — new state goes to `ExecutionEvent`, not new fields on
+`RuntimeState` (frozen). See `CLAUDE.md` "RuntimeState — FROZEN".
 
 ### Event vocabulary
 
@@ -435,7 +436,5 @@ caught immediately rather than after debt accumulates.
 ## 11. Pointers
 
 - Audit history and historical decisions: `docs/EVOLUTION.md`
-- Active sprint and LATER backlog: `DAILY_TASKS.md`
 - Daily development rules: `CLAUDE.md`
 - Per-subsystem ownership: `OWNERSHIP.md`
-- Long-term product vision: `PRD.md`
