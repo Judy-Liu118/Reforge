@@ -18,7 +18,7 @@ Run the suite:
 python -m pytest reforge/tests --tb=short
 ```
 
-You should see ~1500 passing tests in under 2 minutes.
+You should see ~1828 passing tests (4 skipped) in under 2 minutes.
 
 ## Hard rules (see also CLAUDE.md)
 
