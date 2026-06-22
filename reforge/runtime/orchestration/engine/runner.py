@@ -8,6 +8,7 @@ from reforge.memory.substrate import CompositeMemorySubstrate, MemorySubstrate
 from reforge.memory.writer import record_from_final_state
 from reforge.observability.tracing.collector import TraceCollector
 from reforge.runtime.events.log import ExecutionEventLog
+from reforge.runtime.events.models import ExecutionContext
 from reforge.runtime.orchestration.graph.workflow import build_graph
 from reforge.runtime.domain.state.models import RuntimeState
 from reforge.runtime.infrastructure.trajectory.models import TrajectoryRecord
@@ -34,6 +35,10 @@ class RuntimeRunner:
         conversation_id: str | None = None,
     ) -> None:
         self._session_id = uuid.uuid4().hex[:8]
+        # One ExecutionContext per runner — its trace_id stamps every emitted
+        # event so the dashboard can group multi-session investigations back to
+        # the originating request.
+        self._context = ExecutionContext.new(self._session_id)
         # conversation_id groups multiple tasks from one REPL session together.
         # Falls back to per-task session_id when running in single-shot mode.
         self._conversation_id = conversation_id or self._session_id
@@ -48,7 +53,7 @@ class RuntimeRunner:
         self._graph = build_graph(
             memory_substrate=self._memory_substrate,
             event_log=self._event_log,
-            session_id=self._session_id,
+            context=self._context,
         )
         self._collector: TraceCollector | None = None
         self._trajectory_store = trajectory_store
@@ -94,6 +99,10 @@ class RuntimeRunner:
     @property
     def session_id(self) -> str:
         return self._session_id
+
+    @property
+    def context(self) -> ExecutionContext:
+        return self._context
 
     @property
     def collector(self) -> TraceCollector | None:

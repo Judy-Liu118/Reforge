@@ -10,9 +10,11 @@ back to its default (CompositeMemorySubstrate).
 An ExecutionEventLog + session_id may also be injected.  When provided, the
 execution / evaluation / reflection / retry_decision nodes emit ExecutionEvents
 around each lifecycle transition.  When omitted, behavior is unchanged.
-"""
 
-from __future__ import annotations
+An ExecutionContext may be passed via *context*. When set, it supersedes the
+loose *session_id* argument and threads trace_id through every emitted event so
+the dashboard can pivot a multi-session investigation back to one request.
+"""
 
 from reforge.memory.substrate import MemorySubstrate
 from reforge.runtime.events.emitters import (
@@ -23,6 +25,7 @@ from reforge.runtime.events.emitters import (
     wrap_retry_decision_node,
 )
 from reforge.runtime.events.log import ExecutionEventLog
+from reforge.runtime.events.models import ExecutionContext
 from langgraph.graph import END, StateGraph
 from reforge.runtime.orchestration.graph.nodes import (
     capability_node,
@@ -43,7 +46,12 @@ def build_graph(
     memory_substrate: MemorySubstrate | None = None,
     event_log: ExecutionEventLog | None = None,
     session_id: str = "",
+    context: ExecutionContext | None = None,
 ) -> StateGraph:
+    if context is not None:
+        session_id = context.session_id
+    trace_id = context.trace_id if context is not None else None
+
     graph = StateGraph(RuntimeState)
 
     def _planner(state: RuntimeState) -> dict:
@@ -52,11 +60,11 @@ def build_graph(
     def _reflection_base(state: RuntimeState) -> dict:
         return reflection_node(state, substrate=memory_substrate)
 
-    _execution = wrap_execution_node(execution_node, event_log, session_id)
-    _evaluation = wrap_evaluation_node(evaluation_node, event_log, session_id)
-    _reflection = wrap_reflection_node(_reflection_base, event_log, session_id)
-    _retry_decision = wrap_retry_decision_node(retry_decision_node, event_log, session_id)
-    _final_response = wrap_final_response_node(final_response_node, event_log, session_id)
+    _execution = wrap_execution_node(execution_node, event_log, session_id, trace_id=trace_id)
+    _evaluation = wrap_evaluation_node(evaluation_node, event_log, session_id, trace_id=trace_id)
+    _reflection = wrap_reflection_node(_reflection_base, event_log, session_id, trace_id=trace_id)
+    _retry_decision = wrap_retry_decision_node(retry_decision_node, event_log, session_id, trace_id=trace_id)
+    _final_response = wrap_final_response_node(final_response_node, event_log, session_id, trace_id=trace_id)
 
     graph.add_node("planner", _planner)
     graph.add_node("capability_check", capability_node)

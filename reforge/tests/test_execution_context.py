@@ -184,3 +184,71 @@ class TestEndToEndTracePivot:
         b = root.child("worker-b")
         assert a.trace_id == b.trace_id == root.trace_id
         assert a.session_id != b.session_id
+
+
+# ---------------------------------------------------------------------------
+# Runtime integration: wrap_* + build_graph + RuntimeRunner thread trace_id
+# ---------------------------------------------------------------------------
+
+
+class TestEmitterTraceThreading:
+    """The wrap_*_node closures must stamp every emitted event with trace_id
+    when one is provided, and link parent_event_id to the prior event in the
+    same session.
+    """
+
+    def test_wrap_execution_node_threads_trace_id(self) -> None:
+        from reforge.runtime.events.emitters import wrap_execution_node
+        from reforge.runtime.domain.state.models import ExecutionState, RuntimeState
+
+        log = ExecutionEventLog()
+
+        def fake_node(_: RuntimeState) -> dict:
+            return {"exec_state": ExecutionState(exit_code=0, stdout="ok")}
+
+        wrapped = wrap_execution_node(fake_node, log, "sess-1", trace_id="trc-x")
+        wrapped(RuntimeState(user_request="hello"))
+
+        events = log.query(session_id="sess-1")
+        assert len(events) == 2
+        assert all(e.trace_id == "trc-x" for e in events)
+        # EXECUTION_SUCCEEDED is linked to the preceding EXECUTION_STARTED.
+        assert events[1].parent_event_id == events[0].event_id
+
+    def test_wrap_default_trace_id_stays_none(self) -> None:
+        """Backwards compat: callers that don't pass trace_id still get None."""
+        from reforge.runtime.events.emitters import wrap_execution_node
+        from reforge.runtime.domain.state.models import ExecutionState, RuntimeState
+
+        log = ExecutionEventLog()
+
+        def fake_node(_: RuntimeState) -> dict:
+            return {"exec_state": ExecutionState(exit_code=0, stdout="ok")}
+
+        wrap_execution_node(fake_node, log, "sess-2")(RuntimeState(user_request="hi"))
+        for ev in log.query(session_id="sess-2"):
+            assert ev.trace_id is None
+            assert ev.parent_event_id is None
+
+
+class TestBuildGraphConsumesContext:
+    """build_graph must accept ExecutionContext and forward its trace_id."""
+
+    def test_build_graph_accepts_context_kwarg(self) -> None:
+        from reforge.runtime.orchestration.graph.workflow import build_graph
+
+        ctx = ExecutionContext.new("sess-bg")
+        graph = build_graph(context=ctx)
+        assert graph is not None
+
+
+class TestRuntimeRunnerOwnsContext:
+    """RuntimeRunner must materialise an ExecutionContext and expose it."""
+
+    def test_runner_creates_context_with_matching_session_id(self) -> None:
+        from reforge.runtime.orchestration.engine.runner import RuntimeRunner
+
+        runner = RuntimeRunner()
+        assert isinstance(runner.context, ExecutionContext)
+        assert runner.context.session_id == runner.session_id
+        assert runner.context.trace_id  # non-empty
