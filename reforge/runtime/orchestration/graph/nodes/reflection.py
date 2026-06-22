@@ -23,10 +23,10 @@ def _format_memory_context(
     if not records:
         return ""
     lines = ["--- Past recovery experiences ---"]
-    for r in records:
+    for record in records:
         lines.append(
-            f"Error: {r.error_type} → Action: {r.recovery_action or 'none'} "
-            f"→ Outcome: {r.outcome}"
+            f"Error: {record.error_type} → Action: {record.recovery_action or 'none'} "
+            f"→ Outcome: {record.outcome}"
         )
     return "\n".join(lines)
 
@@ -50,7 +50,7 @@ def reflection_node(
                 f"Likely a graceful early exit() after printing an error rather "
                 f"than completing the task. Output tail: {tail}"
             )
-            rr_fail = ReflectionResult(
+            reflection_fail = ReflectionResult(
                 error_type="NonZeroExit",
                 error_summary=summary,
                 suggested_fix=(
@@ -61,20 +61,20 @@ def reflection_node(
                 ),
             )
             return {
-                "reflection_result": rr_fail.model_dump(),
+                "reflection_result": reflection_fail.model_dump(),
                 "semantic_state": state.semantic_state.model_copy(
                     update={
                         "reflection_summary": summary,
-                        "reflection_result": rr_fail,
+                        "reflection_result": reflection_fail,
                     }
                 ),
             }
 
-        rr_ok = ReflectionResult(error_summary="Execution succeeded")
+        reflection_ok = ReflectionResult(error_summary="Execution succeeded")
         return {
-            "reflection_result": rr_ok.model_dump(),  # legacy key for emitter
+            "reflection_result": reflection_ok.model_dump(),
             "semantic_state": state.semantic_state.model_copy(
-                update={"reflection_summary": "Execution succeeded", "reflection_result": rr_ok}
+                update={"reflection_summary": "Execution succeeded", "reflection_result": reflection_ok}
             ),
         }
 
@@ -98,10 +98,12 @@ def reflection_node(
         elif line.startswith("Fix:"):
             suggested_fix = line.removeprefix("Fix:").strip()
 
-    rr = ReflectionResult(error_type=error_type, error_summary=error_summary, suggested_fix=suggested_fix)
+    reflection = ReflectionResult(
+        error_type=error_type, error_summary=error_summary, suggested_fix=suggested_fix
+    )
     return {
-        "reflection_result": rr.model_dump(),  # legacy key consumed by emitter only
+        "reflection_result": reflection.model_dump(),
         "semantic_state": state.semantic_state.model_copy(
-            update={"reflection_summary": error_summary, "reflection_result": rr}
+            update={"reflection_summary": error_summary, "reflection_result": reflection}
         ),
     }

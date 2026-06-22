@@ -23,9 +23,9 @@ class PolicyEngine:
 
     def evaluate(self, state: RuntimeState, classification: dict | None = None) -> RuntimeDecision:
         """Evaluate current runtime state via classification → policy decision."""
-        clf = classification or state.classification_result or {}
+        classification = classification or state.classification_result or {}
         return self._policy.decide(
-            classification=clf,
+            classification=classification,
             execution=state.execution_output,
             evaluation=state.semantic_state.evaluation_result,
             retry_count=state.control_state.retry_count,

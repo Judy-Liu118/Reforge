@@ -24,7 +24,7 @@ def evaluation_node(state: RuntimeState) -> dict:
             }
         )
 
-    er = EvaluationResult(
+    eval_result = EvaluationResult(
         passed=result.passed,
         score=result.score,
         checks=result.checks,
@@ -32,7 +32,10 @@ def evaluation_node(state: RuntimeState) -> dict:
         failure_type=result.failure_type,
     )
     return {
-        "evaluation_result": er.model_dump(),  # legacy key consumed by emitter only
-        "semantic_state": state.semantic_state.model_copy(update={"evaluation_result": er}),
-        "attempts": [a.model_dump() for a in updated_attempts],
+        # Legacy key the emitter still reads; nested semantic_state is canonical.
+        "evaluation_result": eval_result.model_dump(),
+        "semantic_state": state.semantic_state.model_copy(
+            update={"evaluation_result": eval_result}
+        ),
+        "attempts": [attempt.model_dump() for attempt in updated_attempts],
     }

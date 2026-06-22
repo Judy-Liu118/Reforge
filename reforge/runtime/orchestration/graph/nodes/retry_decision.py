@@ -65,22 +65,20 @@ def retry_decision_node(state: RuntimeState) -> dict:
         governor = ExecutionGovernor(max_retries=config.max_retry)
         resolution = governor.resolve(state)
 
+    # retry_decision_action and retry_count are set by wrap_retry_decision_node.
     control_state = state.control_state.model_copy(
         update={"policy_reason": resolution.reason}
-        # retry_decision_action and retry_count are set by wrap_retry_decision_node
     )
     semantic_state = state.semantic_state.model_copy(
         update={"task_intent": resolution.task_intent}
     )
-
-    clf = {
+    classification = {
         "intentional": resolution.intentional,
         "retryable": resolution.retryable,
         "failure_mode": resolution.failure_mode,
     }
-
     return {
-        "classification_result": clf,
+        "classification_result": classification,
         "control_state": control_state,
         "semantic_state": semantic_state,
         "retry_decision": {"action": resolution.action, "reason": resolution.reason},

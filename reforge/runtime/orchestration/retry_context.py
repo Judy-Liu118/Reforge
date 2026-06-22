@@ -24,50 +24,53 @@ class RetryContextData:
 
     @classmethod
     def from_state(cls, state: RuntimeState) -> RetryContextData:
-        """Build RetryContext from the full runtime state.
-
-        Prefers nested sub-states over flat fields (Phase 2 migration).
-        """
-        es = state.exec_state
-        ss = state.semantic_state
-        cs = state.control_state
-        er = ss.evaluation_result
-        clf = state.classification_result or {}
+        """Build RetryContext from the full runtime state."""
+        exec_state = state.exec_state
+        semantic_state = state.semantic_state
+        control_state = state.control_state
+        evaluation_result = semantic_state.evaluation_result
+        classification = state.classification_result or {}
 
         execution_error = ""
-        exit_code = es.exit_code if es.exit_code is not None else 0
+        exit_code = exec_state.exit_code if exec_state.exit_code is not None else 0
         if exit_code != 0:
             execution_error = state.traceback.strip()
             lines = execution_error.split("\n")
             if len(lines) > 3:
                 execution_error = "\n".join(lines[-3:])
 
-        eval_feedback = format_eval_feedback(er) if er else ""
+        eval_feedback = format_eval_feedback(evaluation_result) if evaluation_result else ""
 
-        rr = ss.reflection_result
+        reflection_result = semantic_state.reflection_result
         return cls(
             original_request=state.user_request,
             previous_code=state.generated_code.strip(),
             execution_error=execution_error,
-            reflection_summary=ss.reflection_summary or (rr.error_summary if rr else ""),
+            reflection_summary=(
+                semantic_state.reflection_summary
+                or (reflection_result.error_summary if reflection_result else "")
+            ),
             evaluation_feedback=eval_feedback,
-            retry_reason=cs.policy_reason or clf.get("failure_mode", "unknown"),
-            attempt_index=cs.retry_count + 1,
-            task_intent=ss.task_intent or "",
+            retry_reason=(
+                control_state.policy_reason
+                or classification.get("failure_mode", "unknown")
+            ),
+            attempt_index=control_state.retry_count + 1,
+            task_intent=semantic_state.task_intent or "",
             constraints=_extract_constraints(state),
         )
 
 
 def _extract_constraints(state: RuntimeState) -> list[str]:
-    c: list[str] = []
+    constraints: list[str] = []
     if state.task_requirements:
         if state.task_requirements.must_fail_first:
-            c.append("must_fail_first")
+            constraints.append("must_fail_first")
         if state.task_requirements.expects_uncaught_exception:
-            c.append("expects_uncaught_exception")
+            constraints.append("expects_uncaught_exception")
         if state.task_requirements.expected_final_success:
-            c.append("expected_final_success")
-    return c
+            constraints.append("expected_final_success")
+    return constraints
 
 
 def build_retry_prompt(ctx: RetryContextData) -> str:

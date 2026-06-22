@@ -99,7 +99,7 @@ class AgentRegistry:
         return sorted(v for r, v in self._store if r == role)
 
     # ------------------------------------------------------------------
-    # Actor creation (P18.0 bridge)
+    # Actor creation
     # ------------------------------------------------------------------
 
     def create_actor(

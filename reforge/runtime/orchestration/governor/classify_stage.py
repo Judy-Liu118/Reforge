@@ -27,17 +27,17 @@ class ClassifyStage:
         self._trajectories = trajectory_store or TrajectoryStore()
 
     def execute(self, ctx: RuntimeContext) -> RuntimeContext:
-        eo = ctx.state.execution_output
-        er = ctx.state.semantic_state.evaluation_result
-        clf = self._classifier.classify(
+        execution_output = ctx.state.execution_output
+        evaluation_result = ctx.state.semantic_state.evaluation_result
+        classification = self._classifier.classify(
             task_intent=ctx.task_intent,
-            execution=eo,
-            evaluation=er,
+            execution=execution_output,
+            evaluation=evaluation_result,
             retry_count=ctx.state.control_state.retry_count,
         )
-        ctx.intentional = clf.intentional
-        ctx.retryable = clf.retryable
-        ctx.failure_mode = clf.failure_mode
+        ctx.intentional = classification.intentional
+        ctx.retryable = classification.retryable
+        ctx.failure_mode = classification.failure_mode
 
         # Recall past repairs for this failure mode
         if ctx.retryable and ctx.failure_mode not in ("none", ""):
@@ -45,15 +45,21 @@ class ClassifyStage:
             if records and records[0].repair_strategy:
                 ctx.outcome_reason = records[0].repair_strategy
 
-        # Evaluation pattern learning — inject warning for recurring eval failures
-        if ctx.retryable and er and not er.passed and er.failure_type:
+        # Inject warning when this evaluation failure_type recurred in past sessions.
+        if (
+            ctx.retryable
+            and evaluation_result
+            and not evaluation_result.passed
+            and evaluation_result.failure_type
+        ):
             similar = self._trajectories.find_by_eval_pattern(
-                failure_type=er.failure_type,
+                failure_type=evaluation_result.failure_type,
                 limit=_PATTERN_THRESHOLD + 1,
             )
             if len(similar) >= _PATTERN_THRESHOLD:
                 pattern_hint = (
-                    f"[recurring:{er.failure_type} seen {len(similar)} times] "
+                    f"[recurring:{evaluation_result.failure_type} "
+                    f"seen {len(similar)} times] "
                 )
                 ctx.outcome_reason = (pattern_hint + (ctx.outcome_reason or "")).strip()
 
