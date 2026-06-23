@@ -2,7 +2,6 @@
 
 [![Tests](https://github.com/Judy-Liu118/Reforge/actions/workflows/test.yml/badge.svg)](https://github.com/Judy-Liu118/Reforge/actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-1828%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **An execution-reliability runtime for AI agents.** The retry / stop / accept
@@ -221,7 +220,7 @@ reforge/
 
 | Metric | Value |
 |---|---|
-| Tests | **1828 passing** (4 skipped) |
+| Tests | green on CI — see badge above |
 | Largest source file | 476 lines (no god-files) |
 | Memory backends | 2 (JSON, SQLite) behind one Protocol |
 | MCP transport | hand-rolled stdio JSON-RPC (no SDK) |

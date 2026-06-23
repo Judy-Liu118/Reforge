@@ -27,8 +27,16 @@ from reforge.runtime.orchestration.governor import (
 from reforge.runtime.domain.state.models import RuntimeState
 
 
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _env_truthy(name: str) -> bool:
+    """Case-insensitive boolean parse for an environment variable."""
+    return os.environ.get(name, "").strip().lower() in _TRUTHY
+
+
 def _is_bypass_enabled() -> bool:
-    return os.environ.get("REFORGE_GOVERNOR_BYPASS", "").strip() in {"1", "true", "True"}
+    return _env_truthy("REFORGE_GOVERNOR_BYPASS")
 
 
 def _naive_resolution(state: RuntimeState) -> RuntimeResolution:

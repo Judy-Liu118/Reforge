@@ -26,6 +26,7 @@ from reforge.runtime.domain.state.models import (
     RuntimeControlState,
     RuntimeState,
 )
+from reforge.runtime.policy.task_intent import TaskIntent
 
 
 # ---------------------------------------------------------------------------
@@ -51,12 +52,12 @@ class TestBypassFlag:
         monkeypatch.delenv("REFORGE_GOVERNOR_BYPASS", raising=False)
         assert _is_bypass_enabled() is False
 
-    @pytest.mark.parametrize("val", ["1", "true", "True"])
+    @pytest.mark.parametrize("val", ["1", "true", "True", "TRUE", "yes", "YES", "on", "ON"])
     def test_enabled_values(self, monkeypatch, val: str) -> None:
         monkeypatch.setenv("REFORGE_GOVERNOR_BYPASS", val)
         assert _is_bypass_enabled() is True
 
-    @pytest.mark.parametrize("val", ["0", "false", "False", "", "no"])
+    @pytest.mark.parametrize("val", ["0", "false", "False", "", "no", "off", "maybe"])
     def test_disabled_values(self, monkeypatch, val: str) -> None:
         monkeypatch.setenv("REFORGE_GOVERNOR_BYPASS", val)
         assert _is_bypass_enabled() is False
@@ -108,7 +109,15 @@ class TestNodeRouting:
         # Sanity: with the flag off, the production pipeline runs and produces
         # a typed task_intent + classification result that the naive baseline
         # would never set.
+        #
+        # IntentStage's classify_intent() reaches out to the LLM; we patch it
+        # at the call site so the test stays offline. The downstream
+        # capability/classify/policy stages are deterministic and need no mock.
         monkeypatch.delenv("REFORGE_GOVERNOR_BYPASS", raising=False)
+        monkeypatch.setattr(
+            "reforge.runtime.orchestration.governor.intent_stage.classify_intent",
+            lambda _request: TaskIntent.NORMAL_EXECUTION,
+        )
         result = retry_decision_node(_state(exit_code=1))
         assert "classification_result" in result
         assert "retry_decision" in result

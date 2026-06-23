@@ -186,7 +186,8 @@ drifts away from what events recorded.
 
 This is the foundation for the long-term migration to event-sourced
 RuntimeState — new state goes to `ExecutionEvent`, not new fields on
-`RuntimeState` (frozen). See `CLAUDE.md` "RuntimeState — FROZEN".
+`RuntimeState` (frozen). The "no new fields on RuntimeState" rule is
+enforced by `tests/test_state_no_flat_fields.py`.
 
 ### Event vocabulary
 
@@ -436,5 +437,4 @@ caught immediately rather than after debt accumulates.
 ## 11. Pointers
 
 - Audit history and historical decisions: `docs/EVOLUTION.md`
-- Daily development rules: `CLAUDE.md`
 - Per-subsystem ownership: `OWNERSHIP.md`

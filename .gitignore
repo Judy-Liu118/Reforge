@@ -21,6 +21,7 @@ sandbox/tmp/
 
 # Local tooling state (Claude Code, etc.)
 .claude/
+CLAUDE.md
 
 # Archives
 runs_archive_*.zip

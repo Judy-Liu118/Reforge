@@ -18,12 +18,12 @@ Run the suite:
 python -m pytest reforge/tests --tb=short
 ```
 
-You should see ~1828 passing tests (4 skipped) in under 2 minutes.
+The suite finishes in well under 2 minutes; the CI badge in the README
+is the source of truth for the exact pass count.
 
-## Hard rules (see also CLAUDE.md)
+## Hard rules
 
-These are enforced by review, not always by tests. Please skim CLAUDE.md
-before your first PR.
+These are enforced by review, not always by tests.
 
 | Rule | Why |
 |---|---|
@@ -68,4 +68,4 @@ before your first PR.
 - One concern per PR. Two if they're tightly coupled.
 - Commit subject in imperative, &lt;= 72 chars: `add DockerBackend`, not `Added DockerBackend.`
 - Body should answer *why*, not *what* — the diff shows *what*.
-- Reference the relevant CLAUDE.md rule when reverting an over-engineering attempt.
+- Call out which ownership rule (`OWNERSHIP.md`) is the reason when reverting an over-engineering attempt.
