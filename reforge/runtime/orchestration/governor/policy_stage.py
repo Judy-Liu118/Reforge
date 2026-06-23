@@ -1,5 +1,6 @@
 """PolicyStage — retry policy decision + outcome resolution."""
 
+from reforge.runtime.domain.state.models import TIMEOUT_EXIT_CODE
 from reforge.runtime.orchestration.governor.stages import RuntimeContext
 from reforge.runtime.orchestration.outcome_resolver import resolve_outcome
 from reforge.runtime.policy.retry_policy import RetryPolicy
@@ -13,8 +14,8 @@ class PolicyStage:
         self._policy = RetryPolicy()
 
     def execute(self, ctx: RuntimeContext) -> RuntimeContext:
-        eo = ctx.state.execution_output
-        er = ctx.state.semantic_state.evaluation_result
+        execution = ctx.state.execution_output
+        evaluation = ctx.state.semantic_state.evaluation_result
 
         decision = self._policy.decide(
             classification={
@@ -22,17 +23,17 @@ class PolicyStage:
                 "retryable": ctx.retryable,
                 "failure_mode": ctx.failure_mode,
             },
-            execution=eo,
-            evaluation=er,
+            execution=execution,
+            evaluation=evaluation,
             retry_count=ctx.state.control_state.retry_count,
             max_retries=self._max_retries,
         )
 
         outcome, reason = resolve_outcome(
             task_intent=ctx.task_intent,
-            execution_exit_code=eo.exit_code if eo else -1,
+            execution_exit_code=execution.exit_code if execution else TIMEOUT_EXIT_CODE,
             retry_count=ctx.state.control_state.retry_count,
-            eval_passed=er.passed if er else True,
+            eval_passed=evaluation.passed if evaluation else True,
             policy_action=decision.action.value,
         )
 

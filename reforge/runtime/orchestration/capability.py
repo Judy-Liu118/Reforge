@@ -13,11 +13,13 @@ from pydantic import BaseModel, Field
 
 class CapabilityDecision(BaseModel):
     allow: bool = Field(default=True)
-    reason: str = Field(default="")
+    # The risk category that triggered the deny (e.g. "filesystem_destruction").
+    # Empty when allow=True — the field is meaningful only on rejection.
+    deny_category: str = Field(default="")
     risk_level: str = Field(default="low")
 
 
-_RULES: dict[str, list[str]] = {
+_UNSAFE_PATTERNS: dict[str, list[str]] = {
     "filesystem_destruction": [
         r"rm\s+-rf", r"delete\s+system32", r"format\s+disk",
         r"delete\s+all\s+files", r"wipe\s+disk", r"shred",
@@ -58,15 +60,15 @@ class SemanticSafetyGuard:
 
     def check(self, request: str) -> CapabilityDecision:
         lowered = request.lower()
-        for category, patterns in _RULES.items():
+        for category, patterns in _UNSAFE_PATTERNS.items():
             for pat in patterns:
                 if re.search(pat, lowered):
                     return CapabilityDecision(
                         allow=False,
-                        reason=category,
+                        deny_category=category,
                         risk_level=self._risk_level(category),
                     )
-        return CapabilityDecision(allow=True, reason="", risk_level="low")
+        return CapabilityDecision(allow=True, deny_category="", risk_level="low")
 
     @staticmethod
     def _risk_level(category: str) -> str:

@@ -33,17 +33,17 @@ class ClassifyStage:
             task_intent=ctx.task_intent,
             execution=execution_output,
             evaluation=evaluation_result,
-            retry_count=ctx.state.control_state.retry_count,
         )
         ctx.intentional = classification.intentional
         ctx.retryable = classification.retryable
         ctx.failure_mode = classification.failure_mode
 
-        # Recall past repairs for this failure mode
+        # Recall past repairs for this failure mode → forwarded as repair_hint,
+        # NOT outcome_reason (which PolicyStage owns and will overwrite).
         if ctx.retryable and ctx.failure_mode not in ("none", ""):
             records = self._memory.recall_similar(ctx.request, ctx.failure_mode)
             if records and records[0].repair_strategy:
-                ctx.outcome_reason = records[0].repair_strategy
+                ctx.repair_hint = records[0].repair_strategy
 
         # Inject warning when this evaluation failure_type recurred in past sessions.
         if (
@@ -61,6 +61,6 @@ class ClassifyStage:
                     f"[recurring:{evaluation_result.failure_type} "
                     f"seen {len(similar)} times] "
                 )
-                ctx.outcome_reason = (pattern_hint + (ctx.outcome_reason or "")).strip()
+                ctx.repair_hint = (pattern_hint + (ctx.repair_hint or "")).strip()
 
         return ctx

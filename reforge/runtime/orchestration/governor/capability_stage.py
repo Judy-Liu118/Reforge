@@ -13,6 +13,6 @@ class CapabilityStage:
     def execute(self, ctx: RuntimeContext) -> RuntimeContext:
         cap = self._engine.check(ctx.request)
         ctx.capability_allow = cap.allow
-        ctx.capability_reason = cap.reason
+        ctx.capability_deny_category = cap.deny_category
         ctx.capability_risk = cap.risk_level
         return ctx

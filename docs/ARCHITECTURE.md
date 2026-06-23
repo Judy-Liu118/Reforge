@@ -424,9 +424,9 @@ The ownership table from `OWNERSHIP.md` is enforced by contract tests:
 
 | File | What it freezes |
 |---|---|
-| `tests/test_pr_workflow_split.py` | `graph/workflow.py` line budget; node files each ≤ 100 lines |
-| `tests/test_pr_state_nested_only.py` | No flat fields on RuntimeState |
-| `tests/test_pr_substrate_injection.py` | MemorySubstrate is reachable via `build_graph(memory_substrate=...)` |
+| `tests/test_workflow_module_slim.py` | `graph/workflow.py` line budget; node files each ≤ 100 lines |
+| `tests/test_state_no_flat_fields.py` | No flat fields on RuntimeState |
+| `tests/test_substrate_injection.py` | MemorySubstrate is reachable via `build_graph(memory_substrate=...)` |
 
 These run on every test invocation, so any drift from the architecture is
 caught immediately rather than after debt accumulates.

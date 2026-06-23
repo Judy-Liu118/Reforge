@@ -112,16 +112,16 @@ def _build_summary(
             current["execution_outcome"] = "succeeded"
 
         elif event.kind == "EXECUTION_FAILED" and current is not None:
-            p = event.payload
+            payload = event.payload
             current["execution_outcome"] = "failed"
-            current["failure_category"] = p.get("category", "")
-            current["semantic_meaning"] = p.get("semantic_meaning", "")
-            current["error_summary"] = str(p.get("error", ""))[:120]
+            current["failure_category"] = payload.get("category", "")
+            current["semantic_meaning"] = payload.get("semantic_meaning", "")
+            current["error_summary"] = str(payload.get("error", ""))[:120]
 
         elif event.kind == "EVALUATION_COMPLETED" and current is not None:
-            p = event.payload
-            current["eval_score"] = float(p.get("score", 0.0))
-            current["eval_passed"] = bool(p.get("passed", False))
+            payload = event.payload
+            current["eval_score"] = float(payload.get("score", 0.0))
+            current["eval_passed"] = bool(payload.get("passed", False))
 
         elif event.kind == "REFLECTION_GENERATED" and current is not None:
             current["reflection_summary"] = str(event.payload.get("summary", ""))
@@ -172,22 +172,22 @@ def render_summary(summary: SessionSummary) -> str:
         header_parts.append(f"Recoveries: {summary.recovery_count}")
     lines = [" | ".join(header_parts)]
 
-    for a in summary.attempts:
-        tag = a.execution_outcome.upper()
-        if a.failure_category:
-            tag += f" — {a.failure_category}"
-            if a.semantic_meaning:
-                tag += f" / {a.semantic_meaning}"
-        lines.append(f"\n  Attempt {a.attempt_number} [{tag}]")
+    for attempt in summary.attempts:
+        tag = attempt.execution_outcome.upper()
+        if attempt.failure_category:
+            tag += f" — {attempt.failure_category}"
+            if attempt.semantic_meaning:
+                tag += f" / {attempt.semantic_meaning}"
+        lines.append(f"\n  Attempt {attempt.attempt_number} [{tag}]")
 
-        if a.eval_score or not a.eval_passed:
-            status = "passed" if a.eval_passed else "failed"
-            lines.append(f"    Eval: {a.eval_score:.2f} ({status})")
+        if attempt.eval_score or not attempt.eval_passed:
+            status = "passed" if attempt.eval_passed else "failed"
+            lines.append(f"    Eval: {attempt.eval_score:.2f} ({status})")
 
-        if a.reflection_summary:
-            lines.append(f"    Reflection: {a.reflection_summary[:80]}")
+        if attempt.reflection_summary:
+            lines.append(f"    Reflection: {attempt.reflection_summary[:80]}")
 
-        if a.policy_decision:
-            lines.append(f"    Policy: {a.policy_decision}")
+        if attempt.policy_decision:
+            lines.append(f"    Policy: {attempt.policy_decision}")
 
     return "\n".join(lines)

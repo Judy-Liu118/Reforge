@@ -19,7 +19,7 @@ class SandboxBackend(Protocol):
 
     Implementations MUST:
       - capture stdout / stderr / exit_code / duration_ms
-      - respect timeout_s and surface timeout as exit_code = -1
+      - respect timeout_s and surface timeout as exit_code = TIMEOUT_EXIT_CODE
       - never raise on user-code failures (return non-zero exit_code instead)
 
     A backend MAY raise on infrastructure failure (e.g. DockerUnavailableError

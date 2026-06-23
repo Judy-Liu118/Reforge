@@ -22,7 +22,7 @@ def format_node(node_name: str, state: RuntimeState) -> str | None:
     if node_name == "capability_check":
         cap = state.capability_decision
         if cap:
-            return f"  [Capability] DENY  risk={cap.get('risk_level', 'unknown')}  reason={cap.get('reason', 'policy')}"
+            return f"  [Capability] DENY  risk={cap.get('risk_level', 'unknown')}  reason={cap.get('deny_category', 'policy')}"
         return "  [Capability] ALLOW"
 
     if node_name == "planner":
@@ -248,7 +248,7 @@ def format_result(state: RuntimeState) -> str:
             f"\n{bar}\n"
             f"  [Capability]        DENY\n"
             f"  [Task Outcome]      DENIED\n"
-            f"  [Reason]             {cap.get('reason', 'policy')}\n"
+            f"  [Reason]             {cap.get('deny_category', 'policy')}\n"
             f"{bar}\n"
             f"Request blocked by capability policy.\n"
             f"{bar}"

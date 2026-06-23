@@ -6,8 +6,17 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# Sentinel exit_code that sandbox backends MUST emit on timeout.
+# Negative so it can never collide with a real OS exit code (0..255).
+TIMEOUT_EXIT_CODE: int = -1
+
+
 class ExecutionOutput(BaseModel):
-    """Sandbox execution result — produced by the sandbox executor."""
+    """Sandbox execution result — produced by the sandbox executor.
+
+    `exit_code == TIMEOUT_EXIT_CODE` signals the run was killed by the
+    backend's timeout watchdog; classifier/resolver branch on this sentinel.
+    """
 
     stdout: str = Field(default="")
     stderr: str = Field(default="")

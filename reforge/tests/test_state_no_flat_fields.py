@@ -65,8 +65,8 @@ class TestFlatFieldsRemoved:
                 f"payload field {payload} should remain top-level"
             )
 
-    def test_p42_fields_moved_to_semantic_state(self) -> None:
-        """P42: evaluation_result and reflection_result now live in semantic_state."""
+    def test_eval_and_reflection_live_in_semantic_state(self) -> None:
+        """evaluation_result and reflection_result are owned by semantic_state, not RuntimeState."""
         from reforge.runtime.domain.state.models import SemanticState
         sem_fields = set(SemanticState.model_fields.keys())
         assert "evaluation_result" in sem_fields

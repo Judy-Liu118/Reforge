@@ -16,7 +16,7 @@ class RuntimeContext:
     request: str = ""
     task_intent: str = ""
     capability_allow: bool = True
-    capability_reason: str = ""
+    capability_deny_category: str = ""
     capability_risk: str = "low"
     failure_mode: str = ""
     intentional: bool = False
@@ -25,6 +25,7 @@ class RuntimeContext:
     policy_reason: str = ""
     outcome: str = ""
     outcome_reason: str = ""
+    repair_hint: str = ""
 
 
 class RuntimeStage(Protocol):

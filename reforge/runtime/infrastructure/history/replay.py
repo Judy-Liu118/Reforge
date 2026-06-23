@@ -29,11 +29,11 @@ def format_replay(record: SessionRecord) -> str:
         lines.append("  Execution Trace")
         lines.append(f"  {'#':<4} {'Status':<10} {'Duration':<12} {'Error'}")
         lines.append(f"  {'-' * 48}")
-        for a in record.attempts:
-            status = "OK" if a.exit_code == 0 else "FAIL"
-            dur = f"{a.duration_ms:.0f}ms"
-            err = a.error_type if a.error_type else "-"
-            lines.append(f"  {a.attempt:<4} {status:<10} {dur:<12} {err}")
+        for attempt in record.attempts:
+            status = "OK" if attempt.exit_code == 0 else "FAIL"
+            duration_str = f"{attempt.duration_ms:.0f}ms"
+            error_label = attempt.error_type if attempt.error_type else "-"
+            lines.append(f"  {attempt.attempt:<4} {status:<10} {duration_str:<12} {error_label}")
         lines.append(SEP)
 
     lines.append("")

@@ -74,6 +74,48 @@ Traceback (most recent call last):
 ImportError: cannot import name 'frame' from 'pandas.core'
 """
 
+_TB_INDENT = """\
+  File "main.py", line 3
+    return x
+    ^
+IndentationError: unexpected indent
+"""
+
+_TB_PERMISSION = """\
+Traceback (most recent call last):
+  File "main.py", line 2, in <module>
+    open('/etc/shadow').read()
+PermissionError: [Errno 13] Permission denied: '/etc/shadow'
+"""
+
+_TB_JSON = """\
+Traceback (most recent call last):
+  File "main.py", line 4, in <module>
+    json.loads(s)
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+"""
+
+_TB_UNICODE = """\
+Traceback (most recent call last):
+  File "main.py", line 2, in <module>
+    open('data.csv').read()
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+"""
+
+_TB_ASSERTION = """\
+Traceback (most recent call last):
+  File "main.py", line 5, in <module>
+    assert total == expected
+AssertionError: totals diverged
+"""
+
+_TB_RECURSION = """\
+Traceback (most recent call last):
+  File "main.py", line 3, in f
+    return f(n + 1)
+RecursionError: maximum recursion depth exceeded
+"""
+
 
 # ---------------------------------------------------------------------------
 # Class TestFingerprintExtraction
@@ -144,6 +186,39 @@ class TestFingerprintExtraction:
         d = fp.to_dict()
         assert d["missing_key"] == "sales"
         assert d["root_cause"] == "missing_key"
+
+
+# ---------------------------------------------------------------------------
+# Class TestNewErrorTypeCoverage — regression for #7 (fingerprint gaps)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "traceback, expected_class, expected_phase, expected_root_cause",
+    [
+        (_TB_INDENT,     "IndentationError",   "syntax",  "indentation_error"),
+        (_TB_PERMISSION, "PermissionError",    "runtime", "permission_denied"),
+        (_TB_JSON,       "JSONDecodeError",    "runtime", "invalid_json"),
+        (_TB_UNICODE,    "UnicodeDecodeError", "runtime", "encoding_error"),
+        (_TB_ASSERTION,  "AssertionError",     "runtime", "assertion_failed"),
+        (_TB_RECURSION,  "RecursionError",     "runtime", "recursion_limit"),
+    ],
+)
+def test_extended_error_types_classified(
+    traceback: str,
+    expected_class: str,
+    expected_phase: str,
+    expected_root_cause: str,
+) -> None:
+    fp = extract_fingerprint(traceback)
+    assert fp.error_class == expected_class
+    assert fp.execution_phase == expected_phase
+    assert fp.to_dict()["root_cause"] == expected_root_cause
+
+
+def test_permission_error_keeps_filesystem_domain() -> None:
+    fp = extract_fingerprint(_TB_PERMISSION)
+    assert fp.domain == "filesystem"  # _DOMAIN_PATTERNS already catches it
 
 
 # ---------------------------------------------------------------------------

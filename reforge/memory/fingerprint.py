@@ -71,7 +71,7 @@ def extract_fingerprint(traceback: str, error_type: str = "") -> FailureFingerpr
 
     fp = FailureFingerprint(
         error_class=error_class,
-        execution_phase=_infer_phase(error_class, traceback),
+        execution_phase=_infer_phase(error_class),
         domain=_infer_domain(error_class, message, traceback),
     )
 
@@ -101,10 +101,15 @@ def _last_error_line(traceback: str) -> str:
 
 
 def _split_error_line(line: str) -> tuple[str, str]:
-    """'ErrorClass: message' → ('ErrorClass', 'message')."""
+    """'ErrorClass: message' → ('ErrorClass', 'message').
+
+    Dotted names like ``json.decoder.JSONDecodeError`` are normalised to the
+    leaf class so the root-cause lookup table can be keyed on plain class
+    names regardless of where the exception lives in Python's module tree.
+    """
     m = re.match(r"^([A-Za-z][A-Za-z0-9_.]*(?:Error|Exception|Warning))\s*:\s*(.*)", line)
     if m:
-        return m.group(1), m.group(2)
+        return m.group(1).rsplit(".", 1)[-1], m.group(2)
     return "", line
 
 
@@ -147,8 +152,8 @@ def _extract_name(message: str) -> str:
 # Phase + domain inference
 # ---------------------------------------------------------------------------
 
-def _infer_phase(error_class: str, traceback: str) -> str:
-    if error_class == "SyntaxError":
+def _infer_phase(error_class: str) -> str:
+    if error_class in ("SyntaxError", "IndentationError", "TabError"):
         return "syntax"
     if error_class in ("ImportError", "ModuleNotFoundError"):
         return "import"
@@ -168,24 +173,52 @@ def _infer_domain(error_class: str, message: str, traceback: str) -> str:
     for domain, pattern in _DOMAIN_PATTERNS:
         if re.search(pattern, context):
             return domain
-    if error_class in ("SyntaxError", "NameError", "TypeError", "AttributeError",
-                        "ValueError", "IndexError"):
+    if error_class in (
+        "SyntaxError", "IndentationError", "TabError",
+        "NameError", "TypeError", "AttributeError",
+        "ValueError", "IndexError", "AssertionError",
+        "RecursionError", "TimeoutError",
+        "UnicodeDecodeError", "UnicodeEncodeError",
+        "OverflowError", "ArithmeticError",
+    ):
         return "python"
     return "general"
 
 
 _ROOT_CAUSE_MAP: dict[str, str] = {
+    # Import / module resolution
     "ImportError":          "missing_import",
     "ModuleNotFoundError":  "missing_import",
+    # Lookup
     "KeyError":             "missing_key",
+    "IndexError":           "index_out_of_range",
+    # Filesystem
     "FileNotFoundError":    "missing_file",
+    "PermissionError":      "permission_denied",
+    # Name / attribute
     "NameError":            "undefined_name",
     "AttributeError":       "attribute_error",
+    # Type / value
     "TypeError":            "type_error",
     "ValueError":           "value_error",
+    # Arithmetic
     "ZeroDivisionError":    "division_by_zero",
+    "OverflowError":        "numeric_overflow",
+    "ArithmeticError":      "arithmetic_error",
+    # Syntax (incl. indentation — common in LLM-generated code)
     "SyntaxError":          "syntax_error",
-    "IndexError":           "index_out_of_range",
+    "IndentationError":     "indentation_error",
+    "TabError":             "indentation_error",
+    # Encoding (CSV / JSON / file-read edge cases)
+    "UnicodeDecodeError":   "encoding_error",
+    "UnicodeEncodeError":   "encoding_error",
+    "JSONDecodeError":      "invalid_json",
+    # Runtime / control flow
+    "AssertionError":       "assertion_failed",
+    "RecursionError":       "recursion_limit",
+    "TimeoutError":         "timeout",
+    "StopIteration":        "iterator_exhausted",
+    "NotImplementedError":  "not_implemented",
 }
 
 
@@ -200,6 +233,6 @@ def _from_error_type_string(error_type: str) -> FailureFingerprint:
     error_class = error_type.split(":")[0].strip()
     return FailureFingerprint(
         error_class=error_class,
-        execution_phase=_infer_phase(error_class, ""),
+        execution_phase=_infer_phase(error_class),
         domain=_infer_domain(error_class, error_type, ""),
     )

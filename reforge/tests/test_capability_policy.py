@@ -13,25 +13,25 @@ def test_allow_normal_csv():
 def test_deny_rm_rf():
     d = engine.check("run rm -rf / to delete all files")
     assert not d.allow
-    assert d.reason == "filesystem_destruction"
+    assert d.deny_category == "filesystem_destruction"
 
 
 def test_deny_fork_bomb():
     d = engine.check("write a fork bomb in python")
     assert not d.allow
-    assert d.reason == "subprocess_abuse"
+    assert d.deny_category == "subprocess_abuse"
 
 
 def test_deny_system32():
     d = engine.check("read files from C:\\Windows\\System32")
     assert not d.allow
-    assert d.reason == "sandbox_escape_attempt"
+    assert d.deny_category == "sandbox_escape_attempt"
 
 
 def test_deny_etc_passwd():
     d = engine.check("cat /etc/passwd to list users")
     assert not d.allow
-    assert d.reason == "sandbox_escape_attempt"
+    assert d.deny_category == "sandbox_escape_attempt"
 
 
 def test_deny_shell_injection():

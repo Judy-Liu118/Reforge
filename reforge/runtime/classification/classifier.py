@@ -10,6 +10,7 @@ from reforge.runtime.classification.models import FailureClassification
 from reforge.runtime.domain.state.models import (
     EvaluationResult,
     ExecutionOutput,
+    TIMEOUT_EXIT_CODE,
 )
 
 
@@ -25,7 +26,6 @@ class FailureClassifier:
         task_intent: str,
         execution: ExecutionOutput | None,
         evaluation: EvaluationResult | None,
-        retry_count: int = 0,
     ) -> FailureClassification:
         # --- No failure at all ---
         if execution and execution.exit_code == 0 and (evaluation is None or evaluation.passed):
@@ -35,7 +35,7 @@ class FailureClassifier:
             )
 
         # --- Timeout detection ---
-        if execution and execution.exit_code == -1:
+        if execution and execution.exit_code == TIMEOUT_EXIT_CODE:
             return FailureClassification(
                 intentional=False, retryable=False,
                 failure_mode="timeout", severity="high", confidence=0.9,

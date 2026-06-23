@@ -1,4 +1,4 @@
-"""Tests for improved ExecutionMemory recall scoring (P8.3)."""
+"""Tests for ExecutionMemory record/recall, weighted scoring, and back-compat."""
 
 from __future__ import annotations
 
@@ -97,3 +97,40 @@ def test_new_fields_backward_compat_on_old_records(tmp_path: Path) -> None:
     mem = ExecutionMemory(path=jsonl_path)
     results = mem.recall_similar("old task", failure_mode="none")
     assert isinstance(results, list)
+
+
+def test_recall_returns_repair_strategy(tmp_path: Path) -> None:
+    """Exact failure_mode + matching keywords surfaces the record's repair_strategy."""
+    mem = _mem(tmp_path)
+    mem.record(
+        request="read sales.csv, calculate profit average",
+        outcome="RECOVERED", failure_mode="execution_error",
+        retryable=True, repair_strategy="Check column names first",
+    )
+    mem.record(
+        request="plot revenue chart",
+        outcome="SUCCESS", failure_mode="none",
+    )
+
+    results = mem.recall_similar("read sales.csv", failure_mode="execution_error")
+    assert len(results) == 1
+    assert results[0].repair_strategy == "Check column names first"
+
+
+def test_keyword_overlap_breaks_ties(tmp_path: Path) -> None:
+    """When failure_mode matches both records, keyword overlap decides ordering."""
+    mem = _mem(tmp_path)
+    mem.record(
+        request="read sales.csv",
+        outcome="RECOVERED", failure_mode="execution_error",
+        repair_strategy="strat A",
+    )
+    mem.record(
+        request="plot chart revenue",
+        outcome="SUCCESS", failure_mode="execution_error",
+        repair_strategy="strat B",
+    )
+
+    results = mem.recall_similar("read csv", failure_mode="execution_error")
+    assert len(results) >= 1
+    assert results[0].repair_strategy == "strat A"

@@ -119,8 +119,8 @@ def test_classify_stage_injects_pattern_warning_when_threshold_met(tmp_path: Pat
     ))
     ctx = stage.execute(ctx)
 
-    assert "blanket_except_detected" in ctx.outcome_reason
-    assert "recurring" in ctx.outcome_reason
+    assert "blanket_except_detected" in ctx.repair_hint
+    assert "recurring" in ctx.repair_hint
 
 
 def test_classify_stage_no_warning_below_threshold(tmp_path: Path) -> None:
@@ -150,7 +150,7 @@ def test_classify_stage_no_warning_below_threshold(tmp_path: Path) -> None:
     ))
     ctx = stage.execute(ctx)
 
-    assert "recurring" not in (ctx.outcome_reason or "")
+    assert "recurring" not in (ctx.repair_hint or "")
 
 
 def test_classify_stage_no_warning_when_eval_passed(tmp_path: Path) -> None:
@@ -179,4 +179,4 @@ def test_classify_stage_no_warning_when_eval_passed(tmp_path: Path) -> None:
     ))
     ctx = stage.execute(ctx)
 
-    assert "recurring" not in (ctx.outcome_reason or "")
+    assert "recurring" not in (ctx.repair_hint or "")

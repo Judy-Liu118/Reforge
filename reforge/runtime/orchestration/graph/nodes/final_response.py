@@ -24,11 +24,12 @@ def final_response_node(state: RuntimeState) -> dict:
     cap = state.capability_decision
 
     if cap:
+        deny_category = cap.get("deny_category", "capability_policy")
         outcome_state_denied = state.outcome_state.model_copy(
             update={
                 "task_outcome": "DENIED",
-                "outcome_reason": cap.get("reason", "capability_policy"),
-                "final_answer": f"Request denied: {cap.get('reason', 'policy_violation')}",
+                "outcome_reason": deny_category,
+                "final_answer": f"Request denied: {deny_category}",
             }
         )
         return {"outcome_state": outcome_state_denied}

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+from reforge.runtime.domain.state.models import TIMEOUT_EXIT_CODE
+
 
 class TaskOutcome(str, Enum):
     SUCCESS = "SUCCESS"
@@ -69,7 +71,7 @@ def _classify_event(
     policy_action: str,
 ) -> RuntimeEvent:
     """Map deterministic signals to a runtime event — no if-else chain on task_intent."""
-    if execution_exit_code == -1:
+    if execution_exit_code == TIMEOUT_EXIT_CODE:
         return RuntimeEvent.EXECUTION_TIMEOUT
     if policy_action == "STOP" and execution_exit_code != 0:
         return RuntimeEvent.RETRIES_EXHAUSTED

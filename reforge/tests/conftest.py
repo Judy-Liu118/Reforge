@@ -34,10 +34,6 @@ def _isolate_runtime_data(monkeypatch, tmp_path):
 
     monkeypatch.setattr("reforge.memory.store._MEMORY_DIR", memory_dir)
     monkeypatch.setattr(
-        "reforge.memory.execution_memory._DATA_PATH",
-        data_dir / "execution_memory.jsonl",
-    )
-    monkeypatch.setattr(
         "reforge.memory.sqlite_substrate._DEFAULT_DB",
         memory_dir / "memory.db",
     )

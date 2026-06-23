@@ -19,7 +19,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from reforge.runtime.domain.state.models import ExecutionOutput
+from reforge.runtime.domain.state.models import TIMEOUT_EXIT_CODE, ExecutionOutput
 
 
 class SubprocessBackend:
@@ -88,7 +88,7 @@ class SubprocessBackend:
             return ExecutionOutput(
                 stdout=buffered_stdout,
                 stderr=stderr,
-                exit_code=-1,
+                exit_code=TIMEOUT_EXIT_CODE,
                 duration_ms=round(duration_ms, 2),
             )
         finally:

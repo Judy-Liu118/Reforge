@@ -13,12 +13,6 @@ from pydantic import BaseModel, Field
 from reforge.memory.fingerprint import extract_fingerprint
 from reforge.paths import execution_memory_path
 
-# Kept as a module attribute for backwards compatibility with the test
-# isolation fixture in `conftest.py` which monkeypatches it. New code
-# should not rely on the snapshot — `ExecutionMemory.__init__` resolves
-# `execution_memory_path()` fresh, honouring `REFORGE_PROJECT_DIR`.
-_DATA_PATH = execution_memory_path()
-
 
 class ExecutionRecord(BaseModel):
     """A single runtime execution experience — request, resolution, repair strategy."""
@@ -38,14 +32,9 @@ class ExecutionMemory:
     """Stores and retrieves execution experiences. JSONL-backed, scored search."""
 
     def __init__(self, path: Path | None = None) -> None:
-        # Resolve at call time so REFORGE_PROJECT_DIR (set by isolation
-        # harnesses) takes effect. Falls back to the module-level snapshot
-        # so existing test monkeypatches on `_DATA_PATH` still work.
-        if path is not None:
-            self._path = path
-        else:
-            resolved = execution_memory_path()
-            self._path = resolved if resolved != _DATA_PATH else _DATA_PATH
+        # Resolve at call time so REFORGE_PROJECT_DIR / chdir from test
+        # isolation harnesses take effect.
+        self._path = path or execution_memory_path()
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def record(

@@ -17,7 +17,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from reforge.runtime.domain.state.models import ExecutionOutput
+from reforge.runtime.domain.state.models import TIMEOUT_EXIT_CODE, ExecutionOutput
 
 
 class DockerUnavailableError(RuntimeError):
@@ -119,7 +119,7 @@ class DockerBackend:
             return ExecutionOutput(
                 stdout="",
                 stderr=f"Execution timed out after {timeout_s}s",
-                exit_code=-1,
+                exit_code=TIMEOUT_EXIT_CODE,
                 duration_ms=round(duration_ms, 2),
             )
         finally:
