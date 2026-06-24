@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from reforge.runtime.classification.models import FailureClassification
+
 
 # Sentinel exit_code that sandbox backends MUST emit on timeout.
 # Negative so it can never collide with a real OS exit code (0..255).
@@ -186,7 +188,7 @@ class RuntimeState(BaseModel):
     attempts: list[AttemptRecord] = Field(default_factory=list)
     task_requirements: Optional[TaskRequirements] = Field(default=None)
     capability_decision: Optional[dict] = Field(default=None)
-    classification_result: Optional[dict] = Field(default=None)
+    classification_result: Optional[FailureClassification] = Field(default=None)
 
     # --- Nested sub-states — canonical for ownership-tracked fields ---
     exec_state: ExecutionState = Field(default_factory=ExecutionState)

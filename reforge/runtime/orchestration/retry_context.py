@@ -29,7 +29,7 @@ class RetryContextData:
         semantic_state = state.semantic_state
         control_state = state.control_state
         evaluation_result = semantic_state.evaluation_result
-        classification = state.classification_result or {}
+        classification = state.classification_result
 
         execution_error = ""
         exit_code = exec_state.exit_code if exec_state.exit_code is not None else 0
@@ -53,7 +53,7 @@ class RetryContextData:
             evaluation_feedback=eval_feedback,
             retry_reason=(
                 control_state.policy_reason
-                or classification.get("failure_mode", "unknown")
+                or (classification.failure_mode if classification else "unknown")
             ),
             attempt_index=control_state.retry_count + 1,
             task_intent=semantic_state.task_intent or "",

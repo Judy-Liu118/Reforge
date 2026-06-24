@@ -21,7 +21,7 @@ def record_from_final_state(state: object, session_id: str) -> MemoryRecord | No
     ss = getattr(state, "semantic_state", None)
     cs = getattr(state, "control_state", None)
     os_ = getattr(state, "outcome_state", None)
-    clf = getattr(state, "classification_result", None) or {}
+    clf = getattr(state, "classification_result", None)
     attempts = getattr(state, "attempts", [])
 
     outcome = (os_.task_outcome if os_ else None) or "UNKNOWN"
@@ -43,8 +43,8 @@ def record_from_final_state(state: object, session_id: str) -> MemoryRecord | No
         if fix:
             recovery_actions.append(fix)
 
-    is_intentional = bool(clf.get("intentional", False))
-    requires_recovery = bool(clf.get("retryable", False)) and is_intentional
+    is_intentional = bool(clf.intentional) if clf else False
+    requires_recovery = (bool(clf.retryable) if clf else False) and is_intentional
     retry_count = cs.retry_count if cs else 0
     decision_reason = (os_.outcome_reason if os_ else None) or ""
     traceback = getattr(state, "traceback", "")

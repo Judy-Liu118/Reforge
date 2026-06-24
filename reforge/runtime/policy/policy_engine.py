@@ -5,6 +5,7 @@ No LangGraph dependency. Pure Python adaptation between state models and policy.
 
 from __future__ import annotations
 
+from reforge.runtime.classification.models import FailureClassification
 from reforge.runtime.policy.decision import RuntimeDecision
 from reforge.runtime.policy.retry_policy import RetryPolicy
 from reforge.runtime.domain.state.models import RuntimeState
@@ -21,11 +22,15 @@ class PolicyEngine:
         self._max_retries = max_retries
         self._policy = RetryPolicy()
 
-    def evaluate(self, state: RuntimeState, classification: dict | None = None) -> RuntimeDecision:
+    def evaluate(
+        self,
+        state: RuntimeState,
+        classification: FailureClassification | None = None,
+    ) -> RuntimeDecision:
         """Evaluate current runtime state via classification → policy decision."""
-        classification = classification or state.classification_result or {}
+        clf = classification or state.classification_result
         return self._policy.decide(
-            classification=classification,
+            classification=clf.model_dump() if clf else {},
             execution=state.execution_output,
             evaluation=state.semantic_state.evaluation_result,
             retry_count=state.control_state.retry_count,

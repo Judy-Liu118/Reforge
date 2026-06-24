@@ -93,7 +93,7 @@ def _mock_retry_decision(action: str, reason: str = "test reason"):
     def node(state: RuntimeState) -> dict:
         return {
             "retry_decision": {"action": action, "reason": reason},
-            "classification_result": {},
+            "classification_result": None,
             "governor_resolution": {},
             "control_state": state.control_state,
             "semantic_state": state.semantic_state,

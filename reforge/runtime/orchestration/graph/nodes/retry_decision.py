@@ -20,6 +20,7 @@ import os
 from typing import Literal
 
 from reforge.config import config
+from reforge.runtime.classification.models import FailureClassification
 from reforge.runtime.orchestration.governor import (
     ExecutionGovernor,
     RuntimeResolution,
@@ -80,11 +81,11 @@ def retry_decision_node(state: RuntimeState) -> dict:
     semantic_state = state.semantic_state.model_copy(
         update={"task_intent": resolution.task_intent}
     )
-    classification = {
-        "intentional": resolution.intentional,
-        "retryable": resolution.retryable,
-        "failure_mode": resolution.failure_mode,
-    }
+    classification = FailureClassification(
+        intentional=resolution.intentional,
+        retryable=resolution.retryable,
+        failure_mode=resolution.failure_mode,
+    )
     return {
         "classification_result": classification,
         "control_state": control_state,

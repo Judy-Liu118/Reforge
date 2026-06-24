@@ -10,6 +10,7 @@ from reforge.runtime.orchestration.governor import (
     PolicyStage,
     RuntimeContext,
 )
+from reforge.runtime.classification.models import FailureClassification
 from reforge.runtime.policy.task_intent import TaskIntent
 from reforge.runtime.domain.state.models import (
     EvaluationResult,
@@ -46,7 +47,7 @@ def _state(
         exec_state=ExecutionState(exit_code=exit_code, stdout="ok"),
         control_state=RuntimeControlState(retry_count=retry_count),
         evaluation_result=EvaluationResult(passed=True),
-        classification_result={"intentional": False, "retryable": False, "failure_mode": "none"},
+        classification_result=FailureClassification(intentional=False, retryable=False, failure_mode="none"),
     )
 
 

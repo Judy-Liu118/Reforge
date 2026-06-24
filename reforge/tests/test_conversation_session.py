@@ -27,7 +27,7 @@ def _fake_graph(outcome: str = "SUCCESS"):
     state.attempts = []
     state.generated_code = "print(42)"
     state.user_request = "print 42"
-    state.classification_result = {}
+    state.classification_result = None
 
     graph = MagicMock()
     graph.stream.return_value = [{"final_response": {"exec_state": state.exec_state}}]

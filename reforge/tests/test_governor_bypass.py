@@ -130,4 +130,4 @@ class TestNodeRouting:
         # Naive reason — pins the contract that the bypass really bypassed.
         assert "naive" in decision["reason"]
         # Classification still present (graph contract) but empty failure_mode.
-        assert result["classification_result"]["failure_mode"] == ""
+        assert result["classification_result"].failure_mode == ""
