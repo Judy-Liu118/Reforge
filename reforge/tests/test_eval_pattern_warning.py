@@ -136,9 +136,9 @@ def test_classify_stage_injects_pattern_warning_when_threshold_met(tmp_path: Pat
     )})
 
     ctx = RuntimeContext(state=state, request="analyze csv", task_intent="NORMAL_EXECUTION")
-    ctx.retryable = True
-    ctx.intentional = False
-    ctx.failure_mode = "execution_error"
+    ctx.classification.retryable = True
+    ctx.classification.intentional = False
+    ctx.classification.failure_mode = "execution_error"
 
     stage = ClassifyStage(trajectory_store=traj_store)
     # Patch classifier to avoid LLM calls
@@ -169,8 +169,8 @@ def test_classify_stage_no_warning_below_threshold(tmp_path: Path) -> None:
     )})
 
     ctx = RuntimeContext(state=state, request="analyze csv", task_intent="NORMAL_EXECUTION")
-    ctx.retryable = True
-    ctx.failure_mode = "execution_error"
+    ctx.classification.retryable = True
+    ctx.classification.failure_mode = "execution_error"
 
     stage = ClassifyStage(trajectory_store=traj_store)
     stage._classifier.classify = MagicMock(return_value=MagicMock(
@@ -198,8 +198,8 @@ def test_classify_stage_no_warning_when_eval_passed(tmp_path: Path) -> None:
         )),
     )
     ctx = RuntimeContext(state=state, request="task", task_intent="NORMAL_EXECUTION")
-    ctx.retryable = True
-    ctx.failure_mode = "execution_error"
+    ctx.classification.retryable = True
+    ctx.classification.failure_mode = "execution_error"
 
     stage = ClassifyStage(trajectory_store=traj_store)
     stage._classifier.classify = MagicMock(return_value=MagicMock(

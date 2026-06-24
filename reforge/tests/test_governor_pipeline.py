@@ -65,27 +65,27 @@ class TestStages:
 
     def test_capability_stage_allow(self):
         ctx = CapabilityStage().execute(_ctx("read sales.csv"))
-        assert ctx.capability_allow
+        assert ctx.capability.allow
 
     def test_capability_stage_deny(self):
         ctx = CapabilityStage().execute(_ctx("run rm -rf /"))
-        assert not ctx.capability_allow
-        assert ctx.capability_deny_category == "filesystem_destruction"
+        assert not ctx.capability.allow
+        assert ctx.capability.deny_category == "filesystem_destruction"
 
     def test_classify_stage(self):
         ctx = _ctx()
         ctx.task_intent = "NORMAL_EXECUTION"
         ctx = ClassifyStage().execute(ctx)
-        assert ctx.failure_mode == "none"
-        assert not ctx.intentional
-        assert not ctx.retryable
+        assert ctx.classification.failure_mode == "none"
+        assert not ctx.classification.intentional
+        assert not ctx.classification.retryable
 
     def test_policy_stage(self):
         ctx = _ctx()
         ctx.task_intent = "NORMAL_EXECUTION"
-        ctx.failure_mode = "none"
+        ctx.classification.failure_mode = "none"
         ctx = PolicyStage().execute(ctx)
-        assert ctx.policy_action == "ACCEPT"
+        assert ctx.policy.action == "ACCEPT"
 
 
 class TestGovernorPipeline:
@@ -117,7 +117,7 @@ class TestGovernorPipeline:
         assert r.outcome == "RECOVERED"
 
     def test_repair_hint_survives_policy_stage(self):
-        # PolicyStage overwrites ctx.outcome_reason unconditionally; the
+        # PolicyStage overwrites ctx.policy.outcome_reason unconditionally; the
         # repair hint from ClassifyStage must travel on its own field so it
         # actually reaches the final RuntimeResolution.
         from reforge.memory.execution_memory import ExecutionRecord

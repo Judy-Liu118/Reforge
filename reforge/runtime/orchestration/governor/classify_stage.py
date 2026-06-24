@@ -29,26 +29,23 @@ class ClassifyStage:
     def execute(self, ctx: RuntimeContext) -> RuntimeContext:
         execution_output = ctx.state.execution_output
         evaluation_result = ctx.state.semantic_state.evaluation_result
-        classification = self._classifier.classify(
+        ctx.classification = self._classifier.classify(
             task_intent=ctx.task_intent,
             execution=execution_output,
             evaluation=evaluation_result,
         )
-        ctx.intentional = classification.intentional
-        ctx.retryable = classification.retryable
-        ctx.failure_mode = classification.failure_mode
 
         # Recall past repairs for this failure mode → forwarded as repair_hint,
         # NOT outcome_reason (which PolicyStage owns and will overwrite).
-        if ctx.retryable and ctx.failure_mode not in ("none", ""):
-            records = self._memory.recall_similar(ctx.request, ctx.failure_mode)
+        if ctx.classification.retryable and ctx.classification.failure_mode not in ("none", ""):
+            records = self._memory.recall_similar(ctx.request, ctx.classification.failure_mode)
             if records and records[0].repair_strategy:
                 ctx.repair_hint = records[0].repair_strategy
 
         # Inject warning when this evaluation failure_type recurred in past sessions.
         # Treated as a boolean signal — the threshold gates inclusion, not magnitude.
         if (
-            ctx.retryable
+            ctx.classification.retryable
             and evaluation_result
             and not evaluation_result.passed
             and evaluation_result.failure_type

@@ -11,8 +11,5 @@ class CapabilityStage:
         self._engine = SemanticSafetyGuard()
 
     def execute(self, ctx: RuntimeContext) -> RuntimeContext:
-        cap = self._engine.check(ctx.request, task_intent=ctx.task_intent)
-        ctx.capability_allow = cap.allow
-        ctx.capability_deny_category = cap.deny_category
-        ctx.capability_risk = cap.risk_level
+        ctx.capability = self._engine.check(ctx.request, task_intent=ctx.task_intent)
         return ctx

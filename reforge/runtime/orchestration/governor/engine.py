@@ -40,16 +40,16 @@ class ExecutionGovernor:
         ctx = RuntimeContext(state=state, request=state.user_request)
         for stage in self._stages:
             ctx = stage.execute(ctx)
-            if not ctx.capability_allow:
+            if not ctx.capability.allow:
                 return RuntimeResolution(
                     action="DENY", outcome=TaskOutcome.DENIED.value,
-                    reason=ctx.capability_deny_category,
-                    risk_level=ctx.capability_risk,
+                    reason=ctx.capability.deny_category,
+                    risk_level=ctx.capability.risk_level,
                     task_intent=ctx.task_intent,
                 )
         return RuntimeResolution(
-            action=ctx.policy_action, outcome=ctx.outcome, reason=ctx.outcome_reason,
-            task_intent=ctx.task_intent, failure_mode=ctx.failure_mode,
-            intentional=ctx.intentional, retryable=ctx.retryable,
+            action=ctx.policy.action, outcome=ctx.policy.outcome, reason=ctx.policy.outcome_reason,
+            task_intent=ctx.task_intent, failure_mode=ctx.classification.failure_mode,
+            intentional=ctx.classification.intentional, retryable=ctx.classification.retryable,
             repair_hint=ctx.repair_hint or None,
         )

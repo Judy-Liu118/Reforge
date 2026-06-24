@@ -19,9 +19,9 @@ class PolicyStage:
 
         decision = self._policy.decide(
             classification={
-                "intentional": ctx.intentional,
-                "retryable": ctx.retryable,
-                "failure_mode": ctx.failure_mode,
+                "intentional": ctx.classification.intentional,
+                "retryable": ctx.classification.retryable,
+                "failure_mode": ctx.classification.failure_mode,
             },
             execution=execution,
             evaluation=evaluation,
@@ -37,7 +37,7 @@ class PolicyStage:
             policy_action=decision.action.value,
         )
 
-        ctx.policy_action = decision.action.value
-        ctx.outcome = outcome.value
-        ctx.outcome_reason = reason
+        ctx.policy.action = decision.action.value
+        ctx.policy.outcome = outcome.value
+        ctx.policy.outcome_reason = reason
         return ctx
