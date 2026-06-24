@@ -16,6 +16,23 @@ TIMEOUT_EXIT_CODE: int = -1
 class ExecutionOutput(BaseModel):
     """Sandbox execution result — produced by the sandbox executor.
 
+    Exists alongside ExecutionState (below) on purpose, despite the
+    overlapping fields:
+
+    - ExecutionOutput is the *backend contract*: every sandbox backend
+      (subprocess, docker, …) returns one of these from execute(). Its
+      exit_code is `int` (never None) because the value is only ever
+      constructed after a real run completes.
+
+    - ExecutionState is the *RuntimeState slot*: stored on the live state,
+      mutated across nodes. Its exit_code is `int | None` because "not yet
+      executed" is a meaningful state before the first run.
+
+    `RuntimeState.execution_output` is a property that projects
+    ExecutionState → ExecutionOutput when an exit_code is present, so
+    classifier/policy can take `ExecutionOutput | None` and let the type
+    system distinguish "no run yet" from "ran with exit_code=0".
+
     `exit_code == TIMEOUT_EXIT_CODE` signals the run was killed by the
     backend's timeout watchdog; classifier/resolver branch on this sentinel.
     """
@@ -110,7 +127,13 @@ class RuntimeDecision(BaseModel):
 
 
 class ExecutionState(BaseModel):
-    """Owner: executor node. Deterministic execution results only."""
+    """Owner: executor node. Mutable execution slot on RuntimeState.
+
+    Mirrors ExecutionOutput's fields but allows None for exit_code /
+    duration_ms so the pre-execution state ("planner ran, executor
+    hasn't") has a well-typed representation. See ExecutionOutput's
+    docstring for the contract split.
+    """
 
     stdout: str = Field(default="")
     stderr: str = Field(default="")
