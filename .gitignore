@@ -23,6 +23,10 @@ sandbox/tmp/
 .claude/
 CLAUDE.md
 
+# mypy diff snapshots (local-only verification artifacts)
+.mypy_baseline.txt
+.mypy_after_*.txt
+
 # Archives
 runs_archive_*.zip
 data_memory_polluted_*.zip
