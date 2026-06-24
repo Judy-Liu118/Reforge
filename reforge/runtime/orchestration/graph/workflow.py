@@ -26,7 +26,7 @@ from reforge.runtime.events.emitters import (
 )
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.models import ExecutionContext
-from langgraph.graph import END, StateGraph
+from langgraph.graph import StateGraph
 from reforge.runtime.orchestration.graph.nodes import (
     capability_node,
     code_generation_node,
@@ -91,6 +91,6 @@ def build_graph(
         should_retry,
         {"code_generation": "code_generation", "final_response": "final_response"},
     )
-    graph.add_edge("final_response", END)
+    graph.set_finish_point("final_response")
 
     return graph.compile()
