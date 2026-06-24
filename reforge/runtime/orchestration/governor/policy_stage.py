@@ -38,7 +38,6 @@ class PolicyStage:
         )
 
         ctx.policy_action = decision.action.value
-        ctx.policy_reason = decision.reason
         ctx.outcome = outcome.value
         ctx.outcome_reason = reason
         return ctx

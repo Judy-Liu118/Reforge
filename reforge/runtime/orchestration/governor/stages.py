@@ -22,7 +22,6 @@ class RuntimeContext:
     intentional: bool = False
     retryable: bool = False
     policy_action: str = ""
-    policy_reason: str = ""
     outcome: str = ""
     outcome_reason: str = ""
     repair_hint: str = ""
