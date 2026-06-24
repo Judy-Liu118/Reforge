@@ -28,15 +28,12 @@ class RetryPolicy:
         retryable = classification.get("retryable", False)
         failure_mode = classification.get("failure_mode", "")
 
-        # --- Terminal intentional → STOP ---
         if intentional and not retryable:
             return RuntimeDecision.stop(reason="terminal_intentional_failure")
 
-        # --- Timeout → STOP ---
         if failure_mode == "timeout":
             return RuntimeDecision.stop(reason="timeout")
 
-        # --- Retry limit reached → STOP ---
         if retry_count >= max_retries:
             if execution and execution.exit_code != 0:
                 return RuntimeDecision.stop(reason="retry_limit_reached_with_error")
@@ -44,17 +41,13 @@ class RetryPolicy:
                 return RuntimeDecision.stop(reason="retry_limit_reached_on_eval_fail")
             return RuntimeDecision.stop(reason="retry_limit_reached")
 
-        # --- Retryable → RETRY ---
         if retryable:
             return RuntimeDecision.retry(reason=failure_mode)
 
-        # --- Execution error (not classified as retryable) → RETRY ---
         if execution and execution.exit_code != 0:
             return RuntimeDecision.retry(reason="execution_error")
 
-        # --- Evaluation failure → RETRY ---
         if evaluation and not evaluation.passed:
             return RuntimeDecision.retry(reason="evaluation_failed")
 
-        # --- Clean → ACCEPT ---
         return RuntimeDecision.accept(reason="execution_accepted")

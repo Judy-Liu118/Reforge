@@ -102,11 +102,9 @@ def resolve_outcome(
     """
     event = _classify_event(execution_exit_code, retry_count, eval_passed, policy_action)
 
-    # Check intent override first
     if task_intent in _INTENT_OUTCOME_OVERRIDES:
         overrides = _INTENT_OUTCOME_OVERRIDES[task_intent]
         if event in overrides:
             return overrides[event]
 
-    # Fall back to default mapping
     return _EVENT_OUTCOME_MAP.get(event, (TaskOutcome.FAILED, "unknown"))
