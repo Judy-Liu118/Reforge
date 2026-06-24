@@ -17,6 +17,9 @@ class CapabilityDecision(BaseModel):
     # Empty when allow=True — the field is meaningful only on rejection.
     deny_category: str = Field(default="")
     risk_level: str = Field(default="low")
+    # Category matched but downgraded to allow=True under NORMAL_EXECUTION intent.
+    # Lets callers/observability see "this looked risky but we let it through."
+    warning_category: str = Field(default="")
 
 
 _UNSAFE_PATTERNS: dict[str, list[str]] = {
@@ -58,15 +61,31 @@ class SemanticSafetyGuard:
     code generation.
     """
 
-    def check(self, request: str) -> CapabilityDecision:
+    def check(self, request: str, task_intent: str = "") -> CapabilityDecision:
+        """Regex-screen the request.
+
+        When *task_intent* is "NORMAL_EXECUTION" and the matched category is
+        not high-risk, the hit is downgraded to allow=True with the category
+        surfaced via warning_category. High-risk categories
+        (filesystem_destruction / shell_injection / sandbox_escape_attempt)
+        stay fail-closed regardless of intent. Omitting task_intent reproduces
+        the legacy hard-deny-on-any-hit behavior.
+        """
         lowered = request.lower()
         for category, patterns in _UNSAFE_PATTERNS.items():
             for pat in patterns:
                 if re.search(pat, lowered):
+                    risk = self._risk_level(category)
+                    if task_intent == "NORMAL_EXECUTION" and risk != "high":
+                        return CapabilityDecision(
+                            allow=True,
+                            warning_category=category,
+                            risk_level=risk,
+                        )
                     return CapabilityDecision(
                         allow=False,
                         deny_category=category,
-                        risk_level=self._risk_level(category),
+                        risk_level=risk,
                     )
         return CapabilityDecision(allow=True, deny_category="", risk_level="low")
 
