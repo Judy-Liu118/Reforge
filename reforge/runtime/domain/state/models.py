@@ -82,14 +82,6 @@ class TaskRequirements(BaseModel):
     expects_uncaught_exception: bool = Field(default=False)
 
 
-class RetryContext(BaseModel):
-    """Structured context for retry generation — prevents retry drift."""
-
-    original_intent: str = Field(default="")
-    previous_failure_reason: str = Field(default="")
-    retry_objective: str = Field(default="")
-
-
 class RuntimeDecisionAction(str, Enum):
     RETRY = "RETRY"
     STOP = "STOP"
@@ -115,25 +107,6 @@ class RuntimeDecision(BaseModel):
     @classmethod
     def accept(cls, reason: str) -> "RuntimeDecision":
         return cls(action=RuntimeDecisionAction.ACCEPT, reason=reason, retryable=False, terminal=False)
-
-
-class ExecutionPolicy(BaseModel):
-    """Runtime execution policy — configurable per-session constraints."""
-
-    max_retries: int = Field(default=2)
-    timeout_sec: int = Field(default=10)
-    allow_network: bool = Field(default=False)
-
-
-class DecisionReason(str, Enum):
-    CLEAN_EXECUTION = "clean_execution"
-    INTENTIONAL_FAILURE_ACCEPTED = "intentional_failure_accepted"
-    TASK_FIDELITY_ACHIEVED = "task_fidelity_achieved"
-    EXECUTION_RECOVERED = "execution_recovered"
-    TASK_OBJECTIVE_SATISFIED = "task_objective_satisfied"
-    EVALUATION_FAILED = "evaluation_failed"
-    RETRY_LIMIT_REACHED = "retry_limit_reached"
-    SILENT_FAILURE = "silent_failure"
 
 
 class ExecutionState(BaseModel):
