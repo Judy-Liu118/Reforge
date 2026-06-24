@@ -63,7 +63,7 @@ def code_generation_node(state: RuntimeState) -> dict:
     if is_retry:
         if eval_result and not eval_result.passed:
             failed = [c.name for c in eval_result.checks if not c.passed]
-            if "constraint_not_satisfied" in failed:
+            if "must_fail_first_violated" in failed:
                 retry_prompt = CONSTRAINT_VIOLATION_DIRECTIVE
         if not retry_prompt:
             ctx_data = RetryContextData.from_state(state)

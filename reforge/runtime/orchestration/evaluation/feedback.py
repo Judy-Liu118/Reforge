@@ -36,7 +36,7 @@ _CHECK_TO_INSTRUCTION: dict[str, str] = {
         "silent error suppression hides the real problem. "
         "Handle errors explicitly or let them propagate."
     ),
-    "constraint_not_satisfied": (
+    "must_fail_first_violated": (
         "This task REQUIRES deliberate failure on the first attempt. "
         "Do NOT produce clean code yet — introduce a syntax or logic error first."
     ),

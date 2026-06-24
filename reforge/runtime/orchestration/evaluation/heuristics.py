@@ -244,12 +244,12 @@ class HeuristicEvaluator:
                         detail=issue,
                     ))
 
-        # Check: constraint_not_satisfied
+        # Check: must_fail_first_violated
         if (state.task_requirements and state.task_requirements.must_fail_first
                 and state.control_state.retry_count == 0
                 and state.execution_output.exit_code == 0):
             checks.append(EvalCheck(
-                name="constraint_not_satisfied",
+                name="must_fail_first_violated",
                 passed=False,
                 detail="Task requires intentional failure first, but code executed cleanly — process shortcut detected",
             ))
@@ -443,8 +443,8 @@ class HeuristicEvaluator:
             return "empty_output"
         if "suspicious_result" in failed:
             return "suspicious_result"
-        if "constraint_not_satisfied" in failed:
-            return "constraint_not_satisfied"
+        if "must_fail_first_violated" in failed:
+            return "must_fail_first_violated"
         if "unnecessary_exception_handling" in failed:
             return "unnecessary_exception_handling"
         if "blanket_except_detected" in failed:
