@@ -105,6 +105,20 @@ class TrajectoryStore:
         ]
         return matches[:limit]
 
+    def count_by_eval_pattern(self, failure_type: str) -> int:
+        """Count trajectories with at least one attempt matching *failure_type*.
+
+        Counts without materializing the full TrajectoryRecord list — for
+        callers that only need the cardinality (e.g. recurrence detection).
+        """
+        if not failure_type:
+            return 0
+        return sum(
+            1
+            for rec in self.list_all()
+            if any(s.eval_failure_type == failure_type for s in rec.steps)
+        )
+
     def save_multistep(
         self,
         original_request: str,

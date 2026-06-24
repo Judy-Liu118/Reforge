@@ -46,21 +46,18 @@ class ClassifyStage:
                 ctx.repair_hint = records[0].repair_strategy
 
         # Inject warning when this evaluation failure_type recurred in past sessions.
+        # Treated as a boolean signal — the threshold gates inclusion, not magnitude.
         if (
             ctx.retryable
             and evaluation_result
             and not evaluation_result.passed
             and evaluation_result.failure_type
         ):
-            similar = self._trajectories.find_by_eval_pattern(
+            count = self._trajectories.count_by_eval_pattern(
                 failure_type=evaluation_result.failure_type,
-                limit=_PATTERN_THRESHOLD + 1,
             )
-            if len(similar) >= _PATTERN_THRESHOLD:
-                pattern_hint = (
-                    f"[recurring:{evaluation_result.failure_type} "
-                    f"seen {len(similar)} times] "
-                )
+            if count >= _PATTERN_THRESHOLD:
+                pattern_hint = f"[recurring failure: {evaluation_result.failure_type}] "
                 ctx.repair_hint = (pattern_hint + (ctx.repair_hint or "")).strip()
 
         return ctx

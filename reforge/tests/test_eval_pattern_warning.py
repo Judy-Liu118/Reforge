@@ -76,6 +76,34 @@ def test_find_by_eval_pattern_empty_store(tmp_path: Path) -> None:
     assert store.find_by_eval_pattern("any_type") == []
 
 
+# --- count_by_eval_pattern: honest recurrence count, no limit truncation ---
+
+def test_count_by_eval_pattern_returns_full_count(tmp_path: Path) -> None:
+    # 7 matching trajectories — must not be truncated like find_by_eval_pattern's limit.
+    for i in range(7):
+        _traj_with_eval(tmp_path, "blanket_except_detected", f"s{i}")
+    _traj_with_eval(tmp_path, "empty_output", "s99")
+    store = TrajectoryStore(path=tmp_path / "traj.jsonl")
+    assert store.count_by_eval_pattern("blanket_except_detected") == 7
+
+
+def test_count_by_eval_pattern_zero_for_unseen(tmp_path: Path) -> None:
+    _traj_with_eval(tmp_path, "output_not_empty", "s1")
+    store = TrajectoryStore(path=tmp_path / "traj.jsonl")
+    assert store.count_by_eval_pattern("blanket_except_detected") == 0
+
+
+def test_count_by_eval_pattern_empty_failure_type_returns_zero(tmp_path: Path) -> None:
+    _traj_with_eval(tmp_path, "some_type")
+    store = TrajectoryStore(path=tmp_path / "traj.jsonl")
+    assert store.count_by_eval_pattern("") == 0
+
+
+def test_count_by_eval_pattern_empty_store(tmp_path: Path) -> None:
+    store = TrajectoryStore(path=tmp_path / "empty.jsonl")
+    assert store.count_by_eval_pattern("any_type") == 0
+
+
 # --- P12.5: ClassifyStage evaluation pattern learning ---
 
 def _make_eval_result(failure_type: str, passed: bool = False) -> EvaluationResult:
