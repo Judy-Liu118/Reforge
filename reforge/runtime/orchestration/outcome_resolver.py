@@ -45,7 +45,7 @@ _EVENT_OUTCOME_MAP: dict[RuntimeEvent, tuple[TaskOutcome, str]] = {
 }
 
 # Intent-based overrides — some intents reinterpret the default outcome
-_INTENT_OVERRIDES: dict[str, dict[RuntimeEvent, tuple[TaskOutcome, str]]] = {
+_INTENT_OUTCOME_OVERRIDES: dict[str, dict[RuntimeEvent, tuple[TaskOutcome, str]]] = {
     "STRESS_TEST": {
         RuntimeEvent.EXECUTION_TIMEOUT: (TaskOutcome.SUCCESS, "task_fidelity_achieved"),
     },
@@ -103,8 +103,8 @@ def resolve_outcome(
     event = _classify_event(execution_exit_code, retry_count, eval_passed, policy_action)
 
     # Check intent override first
-    if task_intent in _INTENT_OVERRIDES:
-        overrides = _INTENT_OVERRIDES[task_intent]
+    if task_intent in _INTENT_OUTCOME_OVERRIDES:
+        overrides = _INTENT_OUTCOME_OVERRIDES[task_intent]
         if event in overrides:
             return overrides[event]
 
