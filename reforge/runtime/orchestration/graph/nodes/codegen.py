@@ -56,13 +56,13 @@ def _strip_markdown(raw: str) -> str:
 
 
 def code_generation_node(state: RuntimeState) -> dict:
-    er = state.semantic_state.evaluation_result
-    is_retry = bool(state.traceback or (er and not er.passed))
+    eval_result = state.semantic_state.evaluation_result
+    is_retry = bool(state.traceback or (eval_result and not eval_result.passed))
 
     retry_prompt = ""
     if is_retry:
-        if er and not er.passed:
-            failed = [c.name for c in er.checks if not c.passed]
+        if eval_result and not eval_result.passed:
+            failed = [c.name for c in eval_result.checks if not c.passed]
             if "constraint_not_satisfied" in failed:
                 retry_prompt = CONSTRAINT_VIOLATION_DIRECTIVE
         if not retry_prompt:
@@ -76,7 +76,7 @@ def code_generation_node(state: RuntimeState) -> dict:
         and reqs.must_fail_first
         and state.control_state.retry_count == 0
         and not state.traceback
-        and not er
+        and not eval_result
     ):
         extra_system.append(MUST_FAIL_FIRST_OVERRIDE)
     if reqs and reqs.expects_uncaught_exception:
