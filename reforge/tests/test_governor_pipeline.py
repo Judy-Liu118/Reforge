@@ -47,7 +47,7 @@ def _state(
         exec_state=ExecutionState(exit_code=exit_code, stdout="ok"),
         control_state=RuntimeControlState(retry_count=retry_count),
         evaluation_result=EvaluationResult(passed=True),
-        classification_result=FailureClassification(intentional=False, retryable=False, failure_mode="none"),
+        classification_result=FailureClassification(is_expected_failure=False, retryable=False, failure_mode="none"),
     )
 
 
@@ -77,7 +77,7 @@ class TestStages:
         ctx.task_intent = "NORMAL_EXECUTION"
         ctx = ClassifyStage().execute(ctx)
         assert ctx.classification.failure_mode == "none"
-        assert not ctx.classification.intentional
+        assert not ctx.classification.is_expected_failure
         assert not ctx.classification.retryable
 
     def test_policy_stage(self):

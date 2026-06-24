@@ -19,7 +19,7 @@ class PolicyStage:
 
         decision = self._policy.decide(
             classification={
-                "intentional": ctx.classification.intentional,
+                "is_expected_failure": ctx.classification.is_expected_failure,
                 "retryable": ctx.classification.retryable,
                 "failure_mode": ctx.classification.failure_mode,
             },

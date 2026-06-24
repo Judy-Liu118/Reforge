@@ -43,7 +43,7 @@ def record_from_final_state(state: object, session_id: str) -> MemoryRecord | No
         if fix:
             recovery_actions.append(fix)
 
-    is_intentional = bool(clf.intentional) if clf else False
+    is_intentional = bool(clf.is_expected_failure) if clf else False
     requires_recovery = (bool(clf.retryable) if clf else False) and is_intentional
     retry_count = cs.retry_count if cs else 0
     decision_reason = (os_.outcome_reason if os_ else None) or ""

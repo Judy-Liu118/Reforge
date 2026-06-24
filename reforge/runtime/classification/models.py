@@ -11,7 +11,7 @@ class FailureClassification(BaseModel):
     Separates "what went wrong" (reflection) from "what to do about it" (policy).
     """
 
-    intentional: bool = Field(default=False)
+    is_expected_failure: bool = Field(default=False)
     retryable: bool = Field(default=False)
     failure_mode: str = Field(default="")
     severity: str = Field(default="low")

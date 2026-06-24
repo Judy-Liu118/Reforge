@@ -43,11 +43,11 @@ def _mock_resolution(action: str, reason: str = "test") -> MagicMock:
     r.reason = reason
     r.task_intent = "general"
     r.failure_mode = ""
-    r.intentional = False
+    r.is_expected_failure = False
     r.retryable = action == "RETRY"
     r.model_dump.return_value = {
         "action": action, "reason": reason, "task_intent": "general",
-        "failure_mode": "", "intentional": False, "retryable": r.retryable,
+        "failure_mode": "", "is_expected_failure": False, "retryable": r.retryable,
     }
     return r
 

@@ -24,11 +24,11 @@ class RetryPolicy:
         retry_count: int,
         max_retries: int = 2,
     ) -> RuntimeDecision:
-        intentional = classification.get("intentional", False)
+        is_expected_failure = classification.get("is_expected_failure", False)
         retryable = classification.get("retryable", False)
         failure_mode = classification.get("failure_mode", "")
 
-        if intentional and not retryable:
+        if is_expected_failure and not retryable:
             return RuntimeDecision.stop(reason="terminal_intentional_failure")
 
         if failure_mode == "timeout":

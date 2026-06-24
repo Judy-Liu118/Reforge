@@ -20,7 +20,7 @@ class RuntimeResolution(BaseModel):
     risk_level: str = Field(default="low")
     task_intent: str = Field(default="")
     failure_mode: str = Field(default="")
-    intentional: bool = Field(default=False)
+    is_expected_failure: bool = Field(default=False)
     retryable: bool = Field(default=False)
     repair_hint: str | None = Field(default=None)
 
@@ -50,6 +50,6 @@ class ExecutionGovernor:
         return RuntimeResolution(
             action=ctx.policy.action, outcome=ctx.policy.outcome, reason=ctx.policy.outcome_reason,
             task_intent=ctx.task_intent, failure_mode=ctx.classification.failure_mode,
-            intentional=ctx.classification.intentional, retryable=ctx.classification.retryable,
+            is_expected_failure=ctx.classification.is_expected_failure, retryable=ctx.classification.retryable,
             repair_hint=ctx.repair_hint or None,
         )

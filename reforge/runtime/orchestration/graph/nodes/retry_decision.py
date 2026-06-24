@@ -82,7 +82,7 @@ def retry_decision_node(state: RuntimeState) -> dict:
         update={"task_intent": resolution.task_intent}
     )
     classification = FailureClassification(
-        intentional=resolution.intentional,
+        is_expected_failure=resolution.is_expected_failure,
         retryable=resolution.retryable,
         failure_mode=resolution.failure_mode,
     )
