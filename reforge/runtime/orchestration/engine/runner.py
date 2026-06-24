@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 
 from reforge.config import config
 from reforge.memory.substrate import CompositeMemorySubstrate, MemorySubstrate
@@ -33,6 +34,7 @@ class RuntimeRunner:
         memory_substrate: MemorySubstrate | None = None,
         event_log: ExecutionEventLog | None = None,
         conversation_id: str | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self._session_id = uuid.uuid4().hex[:8]
         # One ExecutionContext per runner — its trace_id stamps every emitted
@@ -50,10 +52,15 @@ class RuntimeRunner:
         self._memory_substrate: MemorySubstrate = (
             memory_substrate if memory_substrate is not None else CompositeMemorySubstrate()
         )
+        # Workspace defaults to Path.cwd() — same place the sandbox writes
+        # target.png and runs the generated script. Pass workspace_dir
+        # explicitly from tests / non-cwd-based callers to avoid chdir.
+        self._workspace_dir = workspace_dir if workspace_dir is not None else Path.cwd()
         self._graph = build_graph(
             memory_substrate=self._memory_substrate,
             event_log=self._event_log,
             context=self._context,
+            workspace_dir=self._workspace_dir,
         )
         self._collector: TraceCollector | None = None
         self._trajectory_store = trajectory_store

@@ -3,6 +3,7 @@
 Each node owns a single responsibility:
 - planner: produce an initial plan + extract process constraints
 - capability: enforce capability policy gates
+- vision_routing: decide whether codegen needs the multimodal LLM
 - codegen: emit Python code, augmented with retry context
 - execution: run code in sandbox and collect output
 - reflection: LLM-based traceback analysis when execution failed
@@ -27,6 +28,7 @@ from reforge.runtime.orchestration.graph.nodes.retry_decision import (
     retry_decision_node,
     should_retry,
 )
+from reforge.runtime.orchestration.graph.nodes.vision_routing import vision_routing_node
 
 __all__ = [
     "capability_node",
@@ -39,4 +41,5 @@ __all__ = [
     "retry_decision_node",
     "route_after_capability",
     "should_retry",
+    "vision_routing_node",
 ]

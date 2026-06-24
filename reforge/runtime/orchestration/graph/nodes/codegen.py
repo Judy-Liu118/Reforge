@@ -2,18 +2,21 @@
 
 Two routes:
   * Text: the default — `LLMClient().chat(...)` for data / general tasks.
-  * Vision: when the user references a target image that exists in the
-    workspace, route to `LLMClient.for_vision_codegen().chat_multimodal`
-    so the LLM sees the pixels. Text descriptions of a UI lose ~90% of
-    the signal (spatial layout, exact colors, font weight).
+  * Vision: when state.vision_routing.use_vision is True (set by the
+    upstream vision_routing_node), call `LLMClient.for_vision_codegen()
+    .chat_multimodal` with the discovered target images so the LLM sees
+    the pixels. Text descriptions of a UI lose ~90% of the signal
+    (spatial layout, exact colors, font weight).
 
-The routing rule lives in `graph.vision_routing` so this file stays
-small and the rule is testable in isolation.
+The routing decision (regex + filesystem scan) lives in
+`graph.vision_routing` and is computed once by `vision_routing_node` —
+this node only *reads* state.vision_routing, never touches the filesystem.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from reforge.models.adapters.llm_client import LLMClient
 from reforge.models.prompts.directives import (
@@ -25,7 +28,6 @@ from reforge.models.prompts.templates import (
     CODE_GENERATION_SYSTEM,
     VISION_CODEGEN_SYSTEM,
 )
-from reforge.runtime.orchestration.graph.vision_routing import discover_target_images
 from reforge.runtime.orchestration.retry_context import RetryContextData, build_retry_prompt
 from reforge.runtime.domain.state.models import RuntimeState
 
@@ -82,8 +84,11 @@ def code_generation_node(state: RuntimeState) -> dict:
     if reqs and reqs.expects_uncaught_exception:
         extra_system.append(EXPECTS_UNCAUGHT_OVERRIDE)
 
-    target_images = discover_target_images(state.user_request)
-    use_vision = bool(target_images)
+    routing = state.vision_routing
+    use_vision = bool(routing and routing.use_vision)
+    target_images: list[Path] = (
+        [Path(p) for p in routing.target_images] if use_vision and routing else []
+    )
 
     base_system = VISION_CODEGEN_SYSTEM if use_vision else CODE_GENERATION_SYSTEM
     system_prompt = base_system
