@@ -5,7 +5,7 @@ import base64
 import mimetypes
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
 from openai import (
     APIConnectionError,
@@ -16,33 +16,14 @@ from openai import (
 )
 
 from reforge.config import config
+from reforge.observability.llm_events import _emit, set_hook  # noqa: F401 — re-export
 from reforge.observability.logging.logger import get_logger
 
-# ---------------------------------------------------------------------------
-# Module-level hook — fires on every LLM lifecycle event.
-# Set via set_hook() to wire into runtime observability without touching nodes.
-# ---------------------------------------------------------------------------
-
-_hook: Callable[[str, dict[str, Any]], None] | None = None
-
-
-def set_hook(fn: Callable[[str, dict[str, Any]], None] | None) -> None:
-    """Register a global hook called with (event_type, payload) on each LLM event.
-
-    Event types: llm_call_start, llm_call_complete, llm_call_retry, llm_call_error
-    Thread-safe for reads; set once at startup before concurrent calls.
-    """
-    global _hook
-    _hook = fn
-
-
-def _emit(event_type: str, payload: dict[str, Any]) -> None:
-    if _hook is not None:
-        try:
-            _hook(event_type, payload)
-        except Exception:
-            pass  # hooks must never break the call path
-
+# `set_hook` is re-exported above for backward compatibility — existing
+# callers (tests, benchmark drivers) import it from this module. The
+# authoritative implementation lives in `reforge.observability.llm_events`,
+# alongside the contextvars-keyed token accumulator that listens on
+# `llm_call_complete` events emitted by `_dispatch` below.
 
 # Errors that warrant a retry — transient network/capacity issues.
 _RETRYABLE = (RateLimitError, APITimeoutError, APIConnectionError)

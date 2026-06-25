@@ -173,9 +173,36 @@ README's experience-memory result already uses.
 | **Recovery rate** | `sum(passed(r) AND attempts(r) > 1) / sum(NOT first_try(r))`. Denominator is **first-try-failure cases for that mode-seed**. The *formula* is mode-independent (each mode-seed computes its own rate without referencing the other arm), so per-seed paired deltas are well-defined. The case-seed denominator value can and does differ between modes — that's expected, since each mode has its own first-try success pattern. | Per-seed value + paired delta + CI |
 | **Attempts per case** | `sum(attempts(r)) / N_cases` | Per-seed value + paired delta + CI. *Lower = less work spent overall.* |
 | **Mean attempts on unsolved** | `sum(attempts(r) for r where NOT passed(r)) / sum(NOT passed(r))`. How much budget the runtime burned on cases it ultimately failed. Replaces the earlier ambiguous `wasted_attempts` — this version doesn't conflate "spent budget on a winner" with "spent budget on a loser". | Per-seed value + paired delta + CI. If a mode has zero unsolved cases, the metric is reported as N/A for that mode-seed cell, not zero. |
-| **Tokens per solved** | `sum(tokens(r)) / max(sum(passed(r)), 1)`. Where `tokens(r)` is the cumulative `usage` field from all LLM calls in the run. | Per-seed value + paired delta + CI |
+| **Tokens per solved** | `sum(tokens(r) for r in solved_with_known_tokens) / max(count(solved_with_known_tokens), 1)`. Where `tokens(r)` is `prompt_tokens + completion_tokens` accumulated across all LLM calls in the run by the harness-side accumulator (`reforge.observability.llm_events.token_accounting`). See sentinel rule below. | Per-seed value + paired delta + CI. Also report the excluded-run count for transparency. |
 | **Cost per solved** | `tokens_per_solved × $/M-tok`, with `$/M-tok` posted in the eval chapter (model-pinned). | Same |
 | **Wall-clock per solved** | `sum(duration_ms(r)) / max(sum(passed(r)), 1) / 1000` seconds. | Same |
+
+**Sentinel rule for `usage=None` (pre-registered).** When a provider
+doesn't populate `response.usage`, the LLM client emits
+`prompt_tokens = -1` and `completion_tokens = -1` for that call. The
+accumulator must NOT silently add `-1` (which would underflow and
+spuriously inflate apparent throughput). It marks the run's token
+totals as `unknown=True`. Reporting rule:
+
+- Runs with `unknown=True` are **excluded from the
+  `tokens_per_solved` numerator and denominator** — not zeroed.
+- Each reported `tokens_per_solved` line MUST also carry the
+  excluded-run count (e.g., "12,400 tokens/solved, n=37, 3 excluded
+  (unknown usage)").
+- If excluded-run fraction exceeds 20% for any (mode, seed) cell, the
+  metric is flagged as low-confidence and not used as a headline.
+
+**Scope of token coverage.** The harness-side accumulator captures
+all LLM calls that flow through `LLMClient._dispatch` — primary text
+codegen, reflection, planner ×2, decomposer, task_intent, and
+multimodal codegen via `LLMClient.chat_multimodal()`. Vision skills
+(`vision_describe`, `compare_images`) currently instantiate `OpenAI`
+directly and bypass the hook — see `docs/KNOWN_LIMITATIONS.md` L2.
+Because the BIRD SQL corpus and the Phase-2 pandas/CSV corpus contain
+no image inputs, the planning LLM does not invoke these skills, and
+coverage on the measured paths is 100%. If a future axis introduces
+image-bearing tasks (e.g., UI reproduction), the vision skills must
+be re-routed through `LLMClient` before that axis can ship measured.
 
 ### Tier B — requires Phase-2's recoverability oracle
 
@@ -306,6 +333,16 @@ Changes from v1 in response to reviewer corrections:
    unrecoverability" rather than "recognizes `.invalid`". Naive
    grep-rule precision spot-check added as sanity gate (if a keyword
    rule clears >50%, the mix is rebalanced).
+10. **Token accounting**: locked at harness side via
+    `reforge.observability.llm_events.token_accounting(case_id, seed)`
+    context manager (contextvars-keyed, measurement-only, does NOT
+    touch `RuntimeState` / governor decision path / vision skills).
+    `usage=None → -1 sentinel` rule pre-registered: such runs are
+    excluded (not zeroed) from `tokens_per_solved`; excluded-run count
+    is reported alongside; >20% exclusion → no headline. Vision-skill
+    coverage gap documented as KNOWN_LIMITATIONS L2; eval-chapter
+    scope sentence: token coverage = 100% of measured corpora because
+    BIRD/pandas-CSV contain no image inputs.
 
 ## Status
 

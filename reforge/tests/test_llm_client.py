@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
-import reforge.models.adapters.llm_client as _module
+import reforge.observability.llm_events as _events
 from reforge.models.adapters.llm_client import LLMClient, set_hook
 
 
@@ -102,7 +102,7 @@ def test_retries_on_rate_limit(mock_config, mock_sleep):
     ])
     client._client.chat.completions.create = mock_create
 
-    with patch.object(_module, "_hook", None):
+    with patch.object(_events, "_hook", None):
         with patch("reforge.models.adapters.llm_client.config", mock_config):
             result = client.chat("sys", "user")
 
@@ -248,7 +248,7 @@ def test_hook_called_on_success(mock_config):
 
     client, _ = _make_client(responses=["result"])
 
-    with patch.object(_module, "_hook", hook):
+    with patch.object(_events, "_hook", hook):
         with patch("reforge.models.adapters.llm_client.config", mock_config):
             client.chat("sys", "user")
 
@@ -273,7 +273,7 @@ def test_hook_called_on_retry(mock_config, mock_sleep):
     ok_resp = _make_response("ok")
     client, _ = _make_client(side_effects=[_rate_limit_error(), ok_resp])
 
-    with patch.object(_module, "_hook", hook):
+    with patch.object(_events, "_hook", hook):
         with patch("reforge.models.adapters.llm_client.config", mock_config):
             client.chat("sys", "user")
 
@@ -297,7 +297,7 @@ def test_hook_called_on_exhaustion(mock_config, mock_sleep):
         _rate_limit_error(), _rate_limit_error()
     ])
 
-    with patch.object(_module, "_hook", hook):
+    with patch.object(_events, "_hook", hook):
         with patch("reforge.models.adapters.llm_client.config", mock_config):
             with pytest.raises(RuntimeError):
                 client.chat("sys", "user")
@@ -317,7 +317,7 @@ def test_hook_exception_does_not_propagate(mock_config):
 
     client, _ = _make_client(responses=["fine"])
 
-    with patch.object(_module, "_hook", bad_hook):
+    with patch.object(_events, "_hook", bad_hook):
         with patch("reforge.models.adapters.llm_client.config", mock_config):
             result = client.chat("sys", "user")
 
@@ -330,15 +330,15 @@ def test_hook_exception_does_not_propagate(mock_config):
 
 
 def test_set_hook_registers_and_clears():
-    original = _module._hook
+    original = _events._hook
     try:
         fn = MagicMock()
         set_hook(fn)
-        assert _module._hook is fn
+        assert _events._hook is fn
         set_hook(None)
-        assert _module._hook is None
+        assert _events._hook is None
     finally:
-        _module._hook = original
+        _events._hook = original
 
 
 # ---------------------------------------------------------------------------

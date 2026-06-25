@@ -105,3 +105,86 @@ the same change.
   buy time without making the larger problem worse.
 
 ---
+
+## L2. Vision skills bypass `LLMClient` — no observability hook coverage
+
+### Symptom
+
+Two skills instantiate `openai.OpenAI` directly and call
+`client.chat.completions.create(...)` themselves, never going through
+`LLMClient._dispatch`:
+
+| Skill | File:line | Config used |
+|---|---|---|
+| `VisionDescribeSkill` | `reforge/runtime/skills/builtin/vision.py:172` (OpenAI ctor), `:113-114` (call) | `VISION_LLM_*` |
+| `CompareImagesSkill` | `reforge/runtime/skills/builtin/image_compare.py:190` (OpenAI ctor), `:128-129` (call) | `VISION_JUDGE_*` |
+
+Consequence: the module-level hook (`reforge.observability.llm_events._emit
+("llm_call_complete", ...)`) does not fire for vision-skill calls.
+Token accumulation via `token_accounting(case_id, seed)` is therefore
+blind to vision-skill LLM cost. The `compare_images()` helper used in
+generated Python for visual self-heal is the heaviest offender — it
+gets called once per attempt in a heal loop.
+
+### Why this is a seam
+
+The skills predate the unified `LLMClient` and chose direct SDK use
+because:
+- they target distinct config (`VISION_LLM_*` and `VISION_JUDGE_*`,
+  separate from `LLM_*` / `CODEGEN_VISION_*`),
+- they accept remote `http(s)://` image URLs,
+- they return `SkillResult`, and
+- they use a different retry helper (`call_with_retry` in
+  `reforge/runtime/skills/builtin/_api_retry.py`).
+
+Routing them through `LLMClient` would require extending the client
+surface — new factory methods, multi-image multimodal support, and
+threading the skill-result shape. Worth doing, not worth doing now.
+
+### Right fix (deferred — trigger condition below)
+
+Add `LLMClient.for_vision_describe()` and `LLMClient.for_vision_judge()`
+factories that mirror `for_vision_codegen()`. Migrate both skills to
+use `client.chat_multimodal(...)` — which already extracts `usage`
+and emits the hook — instead of direct `OpenAI(...).chat.completions.
+create(...)`. The skills keep their retry / downscaling / SkillResult
+shape; only the network call is routed.
+
+### Why defer
+
+- **Measurement scope today**: the two eval corpora locked in
+  `docs/eval/PHASE0_METRICS.md` (BIRD SQL, Phase-2 pandas/CSV)
+  contain no image inputs. The planning LLM does not invoke vision
+  skills on either, so the gap is not on the measured path —
+  `tokens_per_solved` coverage is 100% on those corpora.
+- **Risk of "painting over" the seam**: patching the hook into the
+  skills' current shape (the cheap fix) ratifies the dual-LLM-path
+  design instead of unifying it. The deferral keeps the pressure
+  pointing toward the unified rewrite when it actually matters.
+
+### Trigger to revisit
+
+The deferral expires the moment a measured eval axis includes
+image-bearing tasks (e.g., a future "UI reproduction" axis built on
+the visual self-heal loop). Until then this is documented surface
+area, not a bug.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Adding a copy of the `_emit("llm_call_complete", ...)` block
+  inside each vision skill. Ratifies the bypass; doubles the call
+  sites that have to be kept in sync with the event schema; doesn't
+  remove the dual-LLM-path code smell.
+- ❌ Reading `response.usage` in the skills and stashing it on
+  `SkillResult.metadata` for the driver to harvest. Same anti-pattern
+  wearing a different hat — and it leaks measurement plumbing into
+  the skill contract, which other skills don't carry.
+
+### Acceptable in-place edits while deferred
+
+- Pure logging additions inside the skills that don't change the
+  network call path.
+- Updates to the docstring / `prompt_fragment` of either skill.
+- Adjustments to `call_with_retry` that don't change semantics.
+
+---
