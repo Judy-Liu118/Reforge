@@ -201,14 +201,12 @@ class HeuristicEvaluator:
             ))
 
         # Check: suspicious_result
-        suspicious = False
         if "average" in state.user_request.lower() or "mean" in state.user_request.lower() or "统计" in state.user_request:
             stripped = stdout.strip()
             if stripped in self.SUSPICIOUS_NUMERIC or (
                 stripped.replace(",", "").replace(".", "").isdigit()
                 and float(stripped.replace(",", "")) == 0
             ):
-                suspicious = True
                 checks.append(EvalCheck(
                     name="suspicious_result",
                     passed=False,
