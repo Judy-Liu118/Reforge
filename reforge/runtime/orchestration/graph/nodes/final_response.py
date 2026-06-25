@@ -7,14 +7,14 @@ from reforge.runtime.domain.state.models import RuntimeState
 
 
 def _determine_task_outcome(state: RuntimeState) -> tuple[str, str]:
-    er = state.semantic_state.evaluation_result
-    eo = state.execution_output
+    eval_result = state.semantic_state.evaluation_result
+    exec_output = state.execution_output
 
     outcome, reason = resolve_outcome(
         task_intent=state.semantic_state.task_intent,
-        execution_exit_code=eo.exit_code if eo else -1,
+        execution_exit_code=exec_output.exit_code if exec_output else -1,
         retry_count=state.control_state.retry_count,
-        eval_passed=er.passed if er else True,
+        eval_passed=eval_result.passed if eval_result else True,
         policy_action=state.control_state.retry_decision_action or "",
     )
     return (outcome.value, reason)
