@@ -53,6 +53,7 @@ class EditSkill:
         },
         "required": ["path", "old_string", "new_string"],
     }
+    prompt_fragment = ""
 
     def __init__(self, restrict_to_workspace: bool = True) -> None:
         self._restrict = restrict_to_workspace

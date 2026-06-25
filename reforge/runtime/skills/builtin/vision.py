@@ -64,6 +64,17 @@ class VisionDescribeSkill:
         },
         "required": ["image_path"],
     }
+    prompt_fragment = (
+        "When the LLM already sees the image (vision codegen path), skip "
+        "this — it's a redundant round-trip. Use it when reasoning over "
+        "an image with a text-only LLM, or when a region is too small to "
+        "read with confidence even with vision. Pass `question` to focus "
+        "the description (e.g. \"enumerate every visible text region from "
+        "top to bottom\"). The return value is FREE-FORM text; do NOT "
+        "parse it with regex, json.loads, or any structured extractor — "
+        "transcribe the strings you see in the description literally into "
+        "downstream code (HTML, prompts, etc.)."
+    )
 
     def __init__(self, client: object | None = None) -> None:
         """Inject a custom OpenAI-compatible client for testing; otherwise

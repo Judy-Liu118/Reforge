@@ -39,6 +39,7 @@ class _StubSkill:
         self.name = name
         self.description = f"stub {name}"
         self.input_schema: dict = {"type": "object", "properties": {}}
+        self.prompt_fragment = ""
 
     def invoke(self, params: dict, ctx: SkillContext) -> SkillResult:
         return SkillResult.ok(output=f"{self.name}-ran")

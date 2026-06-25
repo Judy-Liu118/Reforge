@@ -49,6 +49,7 @@ class WebSearchSkill:
         },
         "required": ["query"],
     }
+    prompt_fragment = ""
 
     def __init__(self, provider: SearchProvider | None = None) -> None:
         self._provider = provider or TavilyProvider()

@@ -118,6 +118,14 @@ class WebScreenshotSkill:
         },
         "required": ["source", "output_path"],
     }
+    prompt_fragment = (
+        "For an http(s):// `source` the renderer fetches the live page; "
+        "if the navigation raises (anti-bot 403, slow tracker, timeout), "
+        "let it propagate so the next attempt can try a longer "
+        "nav_timeout_ms or a different wait_until — do NOT write your "
+        "own mock HTML and screenshot it as a substitute target, that "
+        "turns the comparison into self-comparison."
+    )
 
     def __init__(self, playwright_factory=None) -> None:
         """Optionally inject a fake Playwright factory for testing.

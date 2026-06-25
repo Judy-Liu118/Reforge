@@ -181,6 +181,7 @@ class TestSkillsAPI:
             name = "mcp.demo.echo"
             description = "fake"
             input_schema = {"type": "object"}
+            prompt_fragment = ""
 
             def invoke(self, params, ctx):
                 ...

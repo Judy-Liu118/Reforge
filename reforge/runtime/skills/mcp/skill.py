@@ -47,6 +47,8 @@ class MCPSkill:
     def input_schema(self) -> dict:
         return self._tool.input_schema
 
+    prompt_fragment = ""
+
     def invoke(self, params: dict, context: SkillContext) -> SkillResult:
         start = time.perf_counter()
         try:

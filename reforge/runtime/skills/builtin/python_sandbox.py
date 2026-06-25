@@ -39,6 +39,7 @@ class PythonSandboxSkill:
         },
         "required": ["code"],
     }
+    prompt_fragment = ""
 
     def __init__(self, executor: SandboxExecutor | None = None) -> None:
         self._executor = executor

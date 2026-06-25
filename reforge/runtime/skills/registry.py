@@ -7,8 +7,17 @@ views (`bind(capability)`) for runtime-level isolation enforcement.
 
 from __future__ import annotations
 
-from reforge.runtime.agents.capability import AgentCapability
+from typing import TYPE_CHECKING
+
 from reforge.runtime.skills.protocol import Skill
+
+# `AgentCapability` is a TYPE_CHECKING-only import to keep `skills.registry`
+# off the `agents.__init__` → research → models.prompts import chain. The
+# capability is only used through method calls (`enforce_skill`, `allows_skill`)
+# on an instance the caller already constructed, so the runtime never needs
+# the class object here.
+if TYPE_CHECKING:
+    from reforge.runtime.agents.capability import AgentCapability
 
 
 class SkillRegistry:
@@ -21,7 +30,7 @@ class SkillRegistry:
         """Register *skill* under its declared name. Overwrites on conflict."""
         self._skills[skill.name] = skill
 
-    def get(self, name: str, *, capability: AgentCapability | None = None) -> Skill | None:
+    def get(self, name: str, *, capability: "AgentCapability" | None = None) -> Skill | None:
         """Look up a skill by name.
 
         When *capability* is provided, raises `CapabilityViolation` if the
@@ -32,19 +41,19 @@ class SkillRegistry:
             capability.enforce_skill(name)
         return self._skills.get(name)
 
-    def list_all(self, *, capability: AgentCapability | None = None) -> list[Skill]:
+    def list_all(self, *, capability: "AgentCapability" | None = None) -> list[Skill]:
         """Return registered skills. Capability-aware view filters to allowed only."""
         if capability is None:
             return list(self._skills.values())
         return [s for s in self._skills.values() if capability.allows_skill(s.name)]
 
-    def names(self, *, capability: AgentCapability | None = None) -> list[str]:
+    def names(self, *, capability: "AgentCapability" | None = None) -> list[str]:
         """Return registered skill names, filtered by capability when present."""
         if capability is None:
             return list(self._skills.keys())
         return [n for n in self._skills.keys() if capability.allows_skill(n)]
 
-    def to_openai_tools(self, *, capability: AgentCapability | None = None) -> list[dict]:
+    def to_openai_tools(self, *, capability: "AgentCapability" | None = None) -> list[dict]:
         """Export skills as OpenAI function-call specs, filtered by capability."""
         return [
             {
@@ -58,7 +67,7 @@ class SkillRegistry:
             for skill in self.list_all(capability=capability)
         ]
 
-    def bind(self, capability: AgentCapability) -> "BoundSkillRegistry":
+    def bind(self, capability: "AgentCapability") -> "BoundSkillRegistry":
         """Return a restricted view of this registry pre-bound to *capability*."""
         return BoundSkillRegistry(self, capability)
 
@@ -77,12 +86,12 @@ class BoundSkillRegistry:
     `SkillRegistry.bind(capability)`.
     """
 
-    def __init__(self, parent: SkillRegistry, capability: AgentCapability) -> None:
+    def __init__(self, parent: SkillRegistry, capability: "AgentCapability") -> None:
         self._parent = parent
         self._capability = capability
 
     @property
-    def capability(self) -> AgentCapability:
+    def capability(self) -> "AgentCapability":
         return self._capability
 
     def get(self, name: str) -> Skill | None:

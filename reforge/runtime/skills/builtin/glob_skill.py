@@ -43,6 +43,7 @@ class GlobSkill:
         },
         "required": ["pattern"],
     }
+    prompt_fragment = ""
 
     def __init__(self, restrict_to_workspace: bool = True) -> None:
         self._restrict = restrict_to_workspace

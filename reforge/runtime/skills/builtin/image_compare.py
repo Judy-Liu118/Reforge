@@ -77,6 +77,19 @@ class CompareImagesSkill:
         },
         "required": ["target_image", "current_image"],
     }
+    prompt_fragment = (
+        "Use 0.85 as the acceptance threshold — score < 0.85 means visible "
+        "defects (typos / missing icons / wrong proportions) and should "
+        "`raise RuntimeError(...)` to hand control back to the runtime's "
+        "self-heal loop. 0.92+ thresholds push the codegen into over-"
+        "correction (inline SVG bloat → truncated output) without a quality "
+        "gain. NEVER wrap the call in try/except that prints "
+        "\"Warning: Low similarity\" and exits 0 — burying the verdict "
+        "blocks self-heal. The only allowed pattern is:\n"
+        "    score, diff = compare_images(\"target.png\", \"current.png\")\n"
+        "    if score < 0.85:\n"
+        "        raise RuntimeError(f\"Visual diff (score={score:.2f}): {diff}\")"
+    )
 
     def __init__(self, client: object | None = None) -> None:
         self._client = client

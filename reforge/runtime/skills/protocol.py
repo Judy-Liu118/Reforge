@@ -13,9 +13,13 @@ class Skill(Protocol):
     """A typed capability the runtime can invoke.
 
     Implementations declare:
-      - name           : unique identifier (used by registry + LLM function-call)
-      - description    : short text shown to the LLM for tool selection
-      - input_schema   : JSON Schema describing params (OpenAI function-call shape)
+      - name            : unique identifier (used by registry + LLM function-call)
+      - description     : short text shown to the LLM for tool selection
+      - input_schema    : JSON Schema describing params (OpenAI function-call shape)
+      - prompt_fragment : OPTIONAL — empirical usage guidance the codegen
+        system prompt should surface alongside `description`. Use for hard-won
+        lessons that belong to ONE skill (e.g., compare_images' "raise when
+        score < 0.85"). Default "" means "no extra guidance".
 
     invoke() must be side-effect-isolated: it MAY do I/O, MAY raise on
     invalid params, but MUST NOT touch RuntimeState directly. State changes
@@ -30,5 +34,7 @@ class Skill(Protocol):
 
     @property
     def input_schema(self) -> dict: ...
+
+    prompt_fragment: str
 
     def invoke(self, params: dict, context: SkillContext) -> SkillResult: ...
