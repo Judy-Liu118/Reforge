@@ -166,16 +166,14 @@ class HeuristicEvaluator:
             detail=f"stdout has {len(stdout)} chars" if has_output else "stdout is empty or too short",
         ))
 
-        # Check: no_error_in_output (relaxed for intentional error tasks).
-        # Pattern-based so prose like "absolute error vs math.pi: 0.01" does
-        # not trip the check; only traceback-shaped output does.
-        if is_intentional:
-            checks.append(EvalCheck(
-                name="no_error_in_output",
-                passed=True,
-                detail="relaxed — intentional error task",
-            ))
-        else:
+        # Checks: no_error_in_output + stderr_clean.
+        # Both detect failure-shaped output (tracebacks, error lines). For
+        # intentional-error tasks these are by definition expected, so we
+        # skip them entirely instead of appending paired "relaxed" entries
+        # that pad the check list without contributing signal. Pattern-
+        # based so prose like "absolute error vs math.pi: 0.01" does not
+        # trip them; only traceback shape does.
+        if not is_intentional:
             matched = [name for name, pat in self.ERROR_OUTPUT_PATTERNS if pat.search(stdout)]
             no_errors = not matched
             checks.append(EvalCheck(
@@ -183,22 +181,13 @@ class HeuristicEvaluator:
                 passed=no_errors,
                 detail="output clean" if no_errors else f"matched: {matched[0]}",
             ))
-
-        # Check: stderr_clean (relaxed for intentional error tasks)
-        if is_intentional:
             if stderr:
+                stderr_clean = "traceback" not in stderr.lower()
                 checks.append(EvalCheck(
                     name="stderr_clean",
-                    passed=True,
-                    detail="relaxed — intentional error task",
+                    passed=stderr_clean,
+                    detail="stderr is clean" if stderr_clean else f"stderr: {stderr[:80]}",
                 ))
-        elif stderr:
-            stderr_clean = "traceback" not in stderr.lower()
-            checks.append(EvalCheck(
-                name="stderr_clean",
-                passed=stderr_clean,
-                detail="stderr is clean" if stderr_clean else f"stderr: {stderr[:80]}",
-            ))
 
         # Check: suspicious_result
         if "average" in state.user_request.lower() or "mean" in state.user_request.lower() or "统计" in state.user_request:
