@@ -248,25 +248,13 @@ be re-routed through `LLMClient` before that axis can ship measured.
 > so the constraint would test corpus composition without coupling to
 > any runtime behavior.
 >
-> **What Phase 2 retains from Tier B**:
-> - **Timeout-class deliberate-STOP efficiency (new, narrow)**. On
->   timeout-triggering tasks (and on EXPECTED_ERROR-intent tasks if
->   any are included), governor's deliberate STOP avoids the full
->   `(config.max_retry + 1) × T_attempt` budget burn the naive
->   baseline incurs. With defaults (`config.max_retry = 3`,
->   `EXECUTION_TIMEOUT = 30s`) the wall-clock delta is
->   `~30s` (governor) vs `~120s` (naive), plus a 4× codegen-LLM-turn
->   token delta. Reported as paired-delta on `attempts_per_case`,
->   `wall_clock_per_case`, and `tokens_per_case` over the timeout
->   slice. This is the narrow efficiency win that survives the
->   architectural audit.
-> - `false-retry rate` is **dropped, not retained**. On a
->   timeout-only decoy slice it collapses to a binary restatement of
->   the timeout-deliberate-STOP efficiency point above (governor 0%,
->   naive 100% by construction); on non-timeout decoys both modes
->   are at ~100% with no measurable delta. Either way it adds no
->   independent signal, so it goes with the rest of Tier B rather
->   than being kept as a residual.
+> **What Phase 2 retains from Tier B**: nothing. The Phase 2 headline
+> collapses to a single pillar (recovery quality, see below). The
+> v3-draft "Timeout-class deliberate-STOP efficiency" narrow headline
+> is **also deferred** in v4 after the calibration falsified its
+> baseline assumption — see v4 revision log below and
+> `docs/KNOWN_LIMITATIONS.md` L5. `false-retry rate` was already
+> dropped in v3 §8 for redundancy; that decision stands.
 >
 > **What Phase 2 stops claiming**: that governor recognizes *generic*
 > unrecoverability across diverse failure root causes. That claim was
@@ -491,22 +479,90 @@ deliberately not taken):
      math corrected: `initial + 3 retries = 4 attempts × ~30s = ~120s`
      for naive vs `1 attempt × ~30s = ~30s` for governor.
 
+## Revision log (v4 — post-calibration thesis narrowing)
+
+Changes from v3 after the N_seeds=3 calibration (PHASE0_CALIBRATION.md,
+run 2026-06-26 07:10 UTC, four go/no-go gates passed) surfaced two
+descriptive observations whose methodological consequence is captured
+below. v3's significance rule, paired-delta formulas, sentinel rule,
+decoy ban on result-direction gates, N_seeds choices, Tier B defer,
+and instrument-only calibration boundary all carry forward unchanged.
+
+1. **Timeout-class deliberate-STOP efficiency headline DEFERRED**
+   (was: "narrow win retained" in v3). The v3 headline assumed naive
+   on timeout-class decoys burns the full budget
+   (`initial + max_retry attempts ≈ 4 × T_attempt`), giving governor
+   a clean `1 × T_attempt` advantage on attempts / wall / tokens.
+   The calibration falsified that prediction (PHASE0_CALIBRATION O1):
+   on D1″ across 3/3 naive seeds, the codegen LLM adapted under retry
+   pressure — it shortened or removed the `time.sleep(120)`, produced
+   `exit_code == 0`, and the naive baseline ACCEPTed. Governor still
+   deliberately STOPped at attempt 1 in all 3 seeds, but naive's
+   actual cost was 2-3 attempts (~70-110 s wall) rather than the
+   predicted 4 attempts (~120 s). The remaining delta is real but
+   marginal, and its magnitude is driven by codegen randomness rather
+   than the governor's classifier — not a defensible headline. The
+   architectural note is in `docs/KNOWN_LIMITATIONS.md` L5.
+2. **Phase 2 headline converges to a single pillar — recovery
+   quality driven by typed classification + memory-driven
+   retry-hint** (`repair_hint` + `pattern_hint`). Reported on the
+   recoverable slice of Phase 2's corpus + BIRD picks 1/2; measured
+   as paired delta on **recovery rate**, **attempts on solved**,
+   **tokens per solved**, and (when significant) **wall-clock per
+   solved**. No claim about deliberate-STOP efficiency, decoy
+   precision, or generic unrecoverability recognition. Recovery
+   quality is what the audit confirmed governor actually does
+   differently from naive (typed `repair_hint` vs blind retry); it
+   is the honest single pillar.
+3. **Phase 1 BIRD measurement field-of-record locked to the SQL
+   comparator**, explicitly. Calibration already grades BIRD via
+   `reforge.runtime.sql.comparator`, but v4 elevates this to a
+   methodological rule: `state.outcome_state.task_outcome`,
+   `state.control_state.policy_reason`, and the runtime's internal
+   `evaluation_result.passed` MUST NOT be used as the Phase 1
+   passed/failed signal. The calibration surfaced a pattern
+   (PHASE0_CALIBRATION O2 — bird_1313 governor 3/3 seeds) where the
+   LLM evaluator returned false-negatives on SQL-comparator-correct
+   outputs, prompting RETRY-to-budget and `runtime_outcome ==
+   "FAILED"` despite the answer being right. KNOWN_LIMITATIONS L6
+   captures this as a governor-side failure mode bounded by
+   evaluator precision.
+4. **Phase 1 sensitivity appendix scope expanded** (was: only paired
+   confidence-interval robustness). v4 adds a required check:
+   **quantify the LLM-evaluator false-negative rate** across both
+   modes' BIRD runs (per-case fraction of attempts whose SQL output
+   the comparator confirms correct but the internal evaluator
+   rejected), and **inspect its impact on the headline paired
+   delta**. If both arms suffer roughly equal false-negative
+   pressure, the paired delta is robust by construction (paired
+   subtraction cancels common noise). Asymmetric pressure (e.g.,
+   governor's repair_hint flow somehow attracts more evaluator
+   rejections than naive's blind retry) would require reporting the
+   headline with an explicit caveat. Pre-registration commits this
+   check **before** seeing the v4 BIRD numbers.
+5. **No re-run of Phase 0 calibration is required by v4.** The four
+   go/no-go gates passed at ≥3 occurrences each on the recorded
+   run; the v4 changes are thesis and methodology updates, not
+   instrument changes. PHASE0_CALIBRATION.md remains the
+   authoritative calibration artifact.
+
 ## Status
 
-**Signed off (v3 + Tier B defer + α/β narrowing, this commit).** v3
-supersedes v2; v2's headline-CI rule, significance rule, sentinel
-rule, decoy ban on result-direction gates, paired-delta formulas, and
-N_seeds choices all carry forward unchanged. This file remains the
-pre-registration record. The commit hash of this file at sign-off is
-the reference any downstream eval-chapter number must cite. Any
+**Signed off (v4 + headline single-pillar narrowing, this commit).**
+v4 supersedes v3; the v2 → v3 → v4 chain forms the pre-registration
+record. The commit hash of this file at v4 sign-off is the reference
+any downstream Phase 1 / Phase 2 / eval-chapter number must cite. Any
 post-data edit that loosens a metric or relaxes the significance rule
 must be flagged in the eval chapter as a post-hoc change with the
 reason it was made.
 
+Phase 0 calibration: **GO** as of `docs/eval/PHASE0_CALIBRATION.md`
+(run 2026-06-26 07:10 UTC, four gates passed). Phase 1 unblocked.
+
 Phase-0 calibration deliberate-STOP probe: **D1″** (timeout) — see
 `docs/eval/PHASE0_CORPUS.md`. D1′ (FileNotFoundError) and the v2
 `http://example.invalid/...` resolver-failure decoy are both
-deprecated by this audit (would not have triggered deliberate-STOP
+deprecated by the v3 audit (would not have triggered deliberate-STOP
 under the current governor).
 
 Token-accounting prerequisite resolved: harness-side

@@ -425,3 +425,243 @@ Either:
   explicitly, so the dead-default surface area does not grow.
 
 ---
+
+## L5. Codegen LLM adapts away from long sleeps under retry pressure — timeout decoys are not budget-stable
+
+### Symptom
+
+Recorded during Phase 0 calibration (`docs/eval/PHASE0_CALIBRATION.md`
+observation O1). The D1″ decoy is `Sleep for 120 seconds, then print
+"ok"`, with `EXECUTION_TIMEOUT` pinned to 30 s; the pre-registered
+design expected naive to RETRY 4 attempts × ~30 s ≈ 120 s wall before
+budget exhaustion.
+
+Observed under `REFORGE_GOVERNOR_BYPASS=1` (3/3 seeds):
+
+| seed | attempts | action | retry_count | policy_reason |
+|---|---|---|---|---|
+| 0 | 3 | ACCEPT | 2 | `naive: exit_code == 0` |
+| 1 | 3 | ACCEPT | 2 | `naive: exit_code == 0` |
+| 2 | 2 | ACCEPT | 1 | `naive: exit_code == 0` |
+
+The codegen LLM, when handed the previous attempt's traceback
+("Execution timed out after 30s") on retry, did not re-emit
+`time.sleep(120)`. It either shortened the sleep, removed it entirely,
+or rewrote the script to exit cleanly — producing `exit_code == 0`
+and an ACCEPT instead of the predicted budget-exhausted STOP.
+
+### Root cause
+
+There is no determinism between codegen attempts within a session.
+Each attempt re-invokes the codegen LLM with a retry prompt that
+includes the prior traceback; the model is free (and often inclined)
+to "fix" the problem by sidestepping the original spec rather than
+faithfully re-emitting the same code. For a decoy whose only purpose
+is to time out, "fix the timeout" looks like rational repair to the
+LLM. The result is that **the naive baseline's budget-burn behavior
+on timeout decoys is not stable across seeds or models**.
+
+### Practical impact
+
+- **The governor's deliberate-STOP timeout code path remains
+  verifiably reachable**: 3/3 governor seeds in the calibration hit
+  `action=STOP, failure_mode="timeout", retry_count=0`. The L5
+  observation does NOT undermine the calibration verdict; what it
+  rebuts is the pre-registered prediction about naive's wall-clock /
+  attempt-count cost on timeout decoys.
+- **Phase 2 cannot headline a "timeout-class deliberate-STOP
+  efficiency" win.** The remaining attempt / wall / token delta
+  between governor (always 1 attempt) and naive (2-3 attempts,
+  variable) is real but marginal, and its magnitude is dominated by
+  codegen randomness rather than the governor's classifier.
+  `docs/eval/PHASE0_METRICS.md` v4 §1 defers this headline.
+- **More broadly: any decoy whose only failure mechanism is
+  watchdog timeout is corpus-fragile.** The model can always "fix"
+  it. Robust decoys would need a failure mode the codegen LLM cannot
+  route around without changing the answer's correctness — and the
+  current runtime has no such non-timeout, non-intent decoy class
+  it can recognize (per `docs/KNOWN_LIMITATIONS.md` L3).
+
+### Right fix (deferred)
+
+Two non-exclusive paths exist:
+
+- **Pin codegen determinism** (temperature=0 + fixed seed via the LLM
+  client). Reduces inter-seed variance on D1″-style decoys, but does
+  not eliminate the model's "fix the timeout" inclination — it just
+  makes the same fix happen every time.
+- **Replace timeout-decoy designs with adversarial-correctness
+  decoys** that cannot be sidestepped without producing a verifiably
+  wrong answer (e.g., a task that genuinely requires waiting for an
+  external event the sandbox cannot provide, with a comparator that
+  rejects any other output). Hard to construct without leaking
+  intent.
+
+### Why defer
+
+- Phase 0 calibration is GO; the calibration gates do not depend on
+  naive's budget-burn behavior, only on the governor-side
+  deliberate-STOP path being reachable.
+- Phase 2's headline has converged to "recovery quality" alone
+  (PHASE0_METRICS v4 §2); the deliberate-STOP efficiency story this
+  L5 entry undermines is already dropped.
+- A timeout-decoy redesign is a corpus question, not a runtime
+  question. It can be revisited if a future eval slice needs to
+  measure deliberate-STOP efficiency specifically — and would need
+  its own design + calibration pass.
+
+### Trigger to revisit
+
+- A future eval explicitly motivates measuring deliberate-STOP
+  efficiency (separate from recovery quality), e.g., production
+  cost-of-retry analysis where wall-time on unrecoverable tasks
+  drives the SLA.
+- The codegen model is changed to one whose retry behavior under
+  timeout is documented and reproducible.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Forcing the codegen LLM to "re-emit the same code on retry"
+  via a system-prompt directive. Hides the underlying corpus
+  fragility behind prompt engineering; the next eval that uses a
+  different model has the problem back.
+- ❌ Asserting in the calibration / Phase 2 gate that naive D1″ must
+  end in STOP. The model is free to ACCEPT; the gate it must satisfy
+  is "governor deliberately STOPs", not "naive does not".
+- ❌ Quietly raising `EXECUTION_TIMEOUT` to make timeouts "cheaper"
+  per attempt. Cosmetic — doesn't change the model's "fix the
+  timeout" inclination.
+
+### Acceptable in-place edits while deferred
+
+- Adding more diagnostic fields to `CalibrationRecord` so the
+  observation is visible without re-running (already done — actions
+  / retry_count / policy_reason are now captured).
+- Documenting the observation in PHASE0_CALIBRATION (already done as
+  O1).
+
+---
+
+## L6. Governor recovery is upper-bounded by the internal LLM evaluator's precision
+
+### Symptom
+
+Recorded during Phase 0 calibration (`docs/eval/PHASE0_CALIBRATION.md`
+observation O2). On `bird_1313_student_club` under governor mode, all
+3 seeds produced the SQL-comparator-correct row at some attempt, yet:
+
+| seed | attempts | action | policy_reason | runtime_outcome | passed (comparator) |
+|---|---|---|---|---|---|
+| 0 | 4 | STOP | `evaluation_failed` | FAILED | True |
+| 1 | 4 | STOP | `evaluation_failed` | FAILED | True |
+| 2 | 4 | STOP | `evaluation_failed` | FAILED | True |
+
+The runtime's internal LLM evaluator
+(`state.semantic_state.evaluation_result.passed`) returned `False` on
+the attempt whose output the SQL comparator (ground truth) subsequently
+confirmed as correct. PolicyStage took the
+`if evaluation and not evaluation.passed: RETRY "evaluation_failed"`
+branch (`retry_policy.py:50-51`) and the governor RETRY'd until
+`retry_count == max_retry`, at which point it emitted
+`retry_limit_reached_on_eval_fail` STOP with `runtime_outcome ==
+"FAILED"` — recording the case as a failure even though the answer
+was right.
+
+### Root cause
+
+`SemanticState.evaluation_result` is set by an LLM-based evaluator,
+not a deterministic comparator. LLM evaluators have measurable
+false-negative rates, especially on nuanced SQL outputs where the
+correct row is correct but the evaluator quibbles about formatting,
+column alias presentation, or NULL handling. The runtime cannot tell
+the difference between a real evaluator-rejected output and a
+false-negative; it must take the evaluator's signal at face value, so
+it RETRYs. After `max_retry` cycles of "evaluator rejects, governor
+RETRYs", the case STOPs with the evaluator's reason recorded.
+
+### Practical impact
+
+- **The governor's recovery rate carries an implicit ceiling set by
+  the LLM evaluator's precision.** Evaluator false-negative ⇒ the
+  governor burns retries on an already-solved case ⇒ if budget runs
+  out, the case is recorded as `runtime_outcome="FAILED"` even
+  though the answer is correct.
+- **`runtime_outcome` and `policy_reason` are NOT reliable
+  passed/failed signals for Phase 1 BIRD reporting.** Phase 1 BIRD
+  measurement is locked to the SQL comparator
+  (`reforge.runtime.sql.comparator`), per
+  `docs/eval/PHASE0_METRICS.md` v4 §3.
+- **Paired delta vs naive is partially insulated.** Naive does not
+  consult the LLM evaluator (`_naive_resolution` reads only
+  `exit_code`), so naive does not suffer L6's false-negative
+  RETRYs. This asymmetry can cut either direction depending on case
+  shape:
+  - Governor's wasted retries on already-solved cases inflate
+    `attempts_per_case` and `tokens_per_solved` against governor.
+  - Naive's ignorance of evaluator signals means naive ACCEPTs on
+    `exit_code=0` outputs that may be silently wrong by the
+    comparator — inflating naive's apparent solve rate at a quality
+    cost.
+  Phase 1 sensitivity appendix (PHASE0_METRICS v4 §4) is required to
+  quantify the false-negative rate and check headline robustness.
+
+### Right fix (deferred)
+
+The cleanest fix is a hybrid evaluator: trust the SQL comparator
+(or any deterministic oracle the task provides) when one exists, and
+fall back to the LLM evaluator only when no comparator is available.
+`reforge.runtime.sql.comparator` already encodes BIRD's ground-truth
+comparison logic; integrating it into PolicyStage's "should I RETRY"
+decision would close most of the SQL-domain false-negative surface
+without changing the governor's recovery-quality story.
+
+Secondary: tune the LLM evaluator's prompt to be less strict on
+formatting / alias / NULL details (which are responsible for most of
+the observed false-negatives), or downweight evaluator-driven retries
+relative to execution-error retries in the policy.
+
+### Why defer
+
+- **Changes the system-under-test mid-experiment.** Either fix
+  rewires PolicyStage; the Phase 1 ablation would then compare a
+  modified governor vs naive instead of the locked v4 surface.
+- **Phase 1 sensitivity appendix is the v4-locked mitigation.** It
+  surfaces the false-negative rate explicitly and lets the headline
+  be qualified rather than silently affected.
+- **Not a calibration blocker.** The calibration uses the SQL
+  comparator for BIRD grading throughout, so this L6 entry does not
+  affect any of the four go/no-go gates.
+
+### Trigger to revisit
+
+- Phase 1 sensitivity appendix shows the evaluator false-negative
+  rate is asymmetric across modes (governor's repair_hint flow
+  attracting disproportionate evaluator rejections), or material in
+  magnitude (e.g., >20% of governor STOPs are evaluator-rejected
+  correct outputs).
+- A future eval domain has no deterministic comparator and so cannot
+  rely on the v4 SQL-comparator-locked rule.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Using `runtime_outcome` or `policy_reason` as the Phase 1 BIRD
+  pass/fail signal. v4 §3 locks the SQL comparator as the
+  field-of-record.
+- ❌ Silently disabling the LLM evaluator's RETRY branch (lines 50-51
+  in `retry_policy.py`) to mask the false-negative pressure. That
+  hides a governor failure mode rather than reporting it.
+- ❌ Loosening the LLM evaluator's prompt on the eval corpus to
+  reduce the false-negative rate observed in this study. That tunes
+  on the eval corpus and violates the v3 pre-registration ("no
+  parameter tuning on eval data").
+
+### Acceptable in-place edits while deferred
+
+- Adding diagnostic fields that capture the
+  comparator-vs-LLM-evaluator disagreement on a per-attempt basis,
+  so the sensitivity appendix has the data it needs.
+- Tightening the LLM evaluator's prompt on **non-eval** corpora
+  (the demo / regression suite), as long as those changes do not
+  flow into the Phase 1 / Phase 2 governor surface.
+
+---
