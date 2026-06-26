@@ -188,3 +188,171 @@ area, not a bug.
 - Adjustments to `call_with_retry` that don't change semantics.
 
 ---
+
+## L3. Deliberate STOP is intent-driven + timeout-driven, not history-derived
+
+### Symptom
+
+The governor's `RetryPolicy.decide()` (`reforge/runtime/policy/retry_policy.py:19-53`)
+issues a *deliberate* STOP — i.e., a STOP with budget remaining — via
+exactly two branches:
+
+| Branch | Trigger | Set by |
+|---|---|---|
+| `terminal_intentional_failure` | `is_expected_failure=True AND retryable=False` | `FailureClassifier` (`classifier.py:48-52`) when `task_intent ∈ {EXPECTED_ERROR, TRACEBACK_DEMO}` |
+| `timeout` | `failure_mode == "timeout"` | `FailureClassifier` (`classifier.py:36-40`) when `exit_code == TIMEOUT_EXIT_CODE` |
+
+All other failures — including repeated identical `FileNotFoundError`,
+`ImportError` for a missing module, RFC2606 `.invalid` host
+resolution failure, logically unsatisfiable arithmetic, contradictory
+constraints — fall through to `if execution.exit_code != 0: RETRY
+"execution_error"` and loop until `retry_count == max_retries` →
+`retry_limit_reached_with_error` STOP (budget-exhausted, NOT
+deliberate).
+
+`ClassifyStage._PATTERN_THRESHOLD` (`classify_stage.py:12, 46-58`)
+exists but is **not** a STOP trigger. It only injects a
+`"[recurring failure: …]"` prefix into `repair_hint`, which steers the
+next attempt's prompt; it never flips `is_expected_failure` or
+`retryable`. It also watches `evaluation_result.failure_type`, not
+runtime traceback signatures.
+
+### Root cause
+
+The runtime classifies failures *deterministically* from `task_intent`
++ `exit_code` + `evaluation_result` only. There is no per-case error
+history fed into classification — by deliberate design (deterministic,
+reflection-free classification was a stated invariant). Consequently
+the governor cannot conclude "I have seen the same exception type N
+times in a row → this run is unrecoverable" without an additional
+mechanism that does not currently exist.
+
+### Practical impact
+
+Surfaced during Phase 0 calibration corpus design (see
+`docs/eval/PHASE0_CORPUS.md` v2 and `docs/eval/PHASE0_METRICS.md`
+v3). The originally proposed D1′ (missing `config.yaml` →
+`FileNotFoundError`) would not have probed deliberate-STOP; it would
+have RETRY'd to budget exhaustion. Phase 0 rebased to D1″ (timeout
+decoy) which exercises the `failure_mode == "timeout"` branch. The
+`terminal_intentional` branch cannot be calibration-probed without
+constructing an `EXPECTED_ERROR`-intent prompt, which would leak intent
+into the corpus.
+
+Phase 2's earlier deliberate-STOP precision / recall metrics
+(`PHASE0_METRICS.md` v2 Tier B) presumed a recognizer covering
+diverse decoy root causes — resolver failure, missing env dep,
+logically unsatisfiable, self-contradictory. None of those triggers
+deliberate STOP under the current runtime, so the metrics would have
+reported near-zero values that measure an absent feature. Tier B is
+marked deferred in v3.
+
+The runtime's honest current scope is:
+
+1. **Recovery quality on recoverable failures** — typed classification
+   + `repair_hint` (memory recall + recurring-pattern hint) shaping
+   each retry attempt. This is the headline ablation surface vs the
+   naive baseline's blind retry.
+2. **Efficiency on timeout-class and EXPECTED_ERROR-intent failures**
+   — deliberate STOP avoids the full `max_retry × T_attempt` budget
+   burn. A narrow but real delta on the runs that hit those paths.
+
+### Right fix (deferred — see below for why not now)
+
+Add a pattern-based unrecoverability detector to `ClassifyStage`
+(*not* `_PATTERN_THRESHOLD`, which only shapes hints):
+
+- Per-case, hash the top-level exception type from the runtime
+  traceback (e.g., `FileNotFoundError`, `ImportError`, `KeyError`).
+- Maintain a per-case `Counter[exception_type] → int` across attempts
+  within the same case run.
+- When `counter[top_level_exc_type] >= N` (suggested initial threshold
+  `N = 3`), flip the next-attempt classification to
+  `is_expected_failure=True, retryable=False,
+  failure_mode="repeated_signature"`. PolicyStage then issues a
+  deliberate STOP.
+- Apply the same to repeated identical `evaluation_result.failure_type`
+  on eval-driven failures (separately, since eval-failure history is
+  already partially tracked by `_PATTERN_THRESHOLD`).
+
+### Why defer
+
+- **Precision is unverified, and probably worse than it looks**. A
+  repeated `FileNotFoundError` next attempt CAN still recover — the
+  codegen may decide to `os.makedirs` + write a placeholder, or
+  switch to a different path, or import `pathlib` and use a default.
+  A repeated `ImportError` may resolve when codegen swaps to a
+  stdlib alternative. The threshold `N` and per-exception-type
+  exemptions need empirical tuning *before* adoption, and tuning on
+  the eval corpus would violate the v3 pre-registration ("no
+  parameter tuning on eval data"). A pre-Phase-2 detector PR therefore
+  needs its own non-eval calibration corpus, which is a project of
+  its own.
+- **Changes the system-under-test mid-experiment**. Adding the
+  detector between Phase 0 sign-off and Phase 2 runs would mean the
+  ablation compares "governor with new detector" vs "governor without
+  detector" rather than vs naive, muddling the headline. Either the
+  detector lands before Phase 0 (and is part of the locked runtime
+  surface), or after Phase 2 (and motivates a Phase 4).
+- **Honest scope today is fine**. The recovery-quality headline
+  (point 1 above) is the actual differentiation between governor and
+  naive on a typical workload; the deliberate-STOP efficiency is a
+  secondary, narrow win. Forcing the secondary win to cover decoy
+  classes the runtime can't recognize would dishonestly inflate the
+  claim.
+
+### Trigger to revisit
+
+The deferral expires if either:
+
+- A subsequent eval (Phase 4+) is explicitly designed to motivate the
+  detector — i.e., a slice of recoverable+decoy cases where the
+  detector demonstrably shifts the precision/recall point and the
+  eval methodology accounts for the system-under-test change.
+- A downstream user-facing requirement emerges (e.g., "the runtime
+  should stop attempting unsolvable user tasks within ≤2 attempts
+  rather than burning the full retry budget") that the current
+  intent + timeout coverage cannot satisfy.
+
+Until either trigger fires, this is documented surface area, not a
+bug, and Phase 1 / Phase 2 ship within the narrowed scope above.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Promoting `_PATTERN_THRESHOLD` from "inject repair_hint prefix"
+  to "flip `retryable=False` and STOP". That conflates two different
+  mechanisms (hint quality vs unrecoverability detection), repurposes
+  an already-pre-registered threshold (contamination disclosure in
+  `PHASE0_METRICS.md` would have to be revised), and gives the wrong
+  signal (recurring `evaluation_result.failure_type` says "eval keeps
+  rejecting", not "runtime keeps crashing identically").
+- ❌ Inferring unrecoverability from `reflection` output. Reflection is
+  explicitly excluded from classification by current design
+  (`classifier.py` docstring: "Reflection = debugging hints only, no
+  runtime authority"). Routing classification through reflection
+  would re-introduce the boundary violation L1 already documents in
+  spirit.
+- ❌ Adding a keyword scan ("if 'invalid' or '.com.invalid' in
+  traceback: STOP") to recognize resolver-failure decoys. Same
+  anti-pattern as L1 — replaces a structural fix with a brittle
+  string match that won't generalize and will rot.
+- ❌ Quietly lowering `max_retry` to 1 on the eval corpus so the
+  difference between deliberate-STOP and budget-exhausted-STOP
+  disappears. That hides the gap by removing the measurement; it
+  doesn't close it.
+
+### Acceptable in-place edits while deferred
+
+- Adding observability fields to `RuntimeResolution` that record
+  *why* a STOP was issued (`policy_reason` already does this — keep
+  it). No new STOP triggers, just better post-hoc analysis.
+- Telemetry that counts per-case repeated-exception-type runs and
+  surfaces it in the eval chapter as "this is what a future detector
+  could have caught" — measurement, not behavior change.
+- Adding more cases to `task_intent.py`'s few-shot prompt so
+  IntentStage classifies more accurately (still only NORMAL_EXECUTION
+  / EXPECTED_ERROR / TRACEBACK_DEMO / RECOVERABLE_DEMO / STRESS_TEST
+  / SANDBOX_ESCAPE — no new enum members). Tightens the existing
+  deliberate-STOP paths without adding new ones.
+
+---

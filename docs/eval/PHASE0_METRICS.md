@@ -97,17 +97,30 @@ circular: it would gate the experiment on its own conclusion.
 |---|---|---|
 | `mode=naive`: every passing run logs `policy_reason` starting with `naive:` | path swap actually happened | 100% |
 | `mode=governor`: every run logs a non-empty `failure_mode` or `task_intent` on failed attempts | governor pipeline ran | 100% |
-| `mode=governor` on the decoy toy: at least one run emits a non-budget-exhaustion STOP (`is_expected_failure=True` or terminal classification) | STOP-path code is reachable, not dead | ≥1 occurrence |
+| `mode=governor` on D1″ (timeout decoy): at least one run emits `action == "STOP"` with `state.classification_result.failure_mode == "timeout"` and `state.control_state.retry_count < config.max_retry` | timeout deliberate-STOP code path reachable, not dead. `failure_mode` is intent-independent (set in `classifier.py:36-40` before any task_intent branch), so the gate stays robust even if IntentStage re-classifies the prompt. | ≥1 occurrence |
 | Seed variation: ≥2 of 3 calibration seeds produce a different decision trace on at least one task | seeds actually plumb through the LLM call layer | yes |
 | Paired diff: per (case, seed) pair, the two modes share `case_id` and seed key; record counts align | paired aggregation will be valid downstream | 100% |
 | All Tier-A metrics computable on the calibration runs (no NaN / divide-by-zero / missing field) | metric formulas survive contact with the real state shape | 100% |
 
-Calibration corpus construction: 5 from BIRD-easy + 3 hand-built toys
-exercising an intentional first-try failure (e.g., the `$1,234.56`
-coercion Phase 2 uses at scale) + **≥1 unsolvable decoy toy** (e.g.,
-"GET this nonexistent URL and report the response") so the
-governor's STOP path gets exercised in the gate. This is *not* an
-evaluation set — it's a fixture, discarded for reporting.
+Calibration corpus construction: 5 from BIRD-simple + 3 hand-built
+toys exercising an intentional first-try failure (T1 eval-driven
+silent-wrong; T2/T3 execution-error recovery) + **D1″** (timeout
+decoy: an infinite-loop prompt that hits `EXECUTION_TIMEOUT=30s`
+watchdog) so the timeout deliberate-STOP path is exercised at the
+gate. The locked corpus and rationale live in
+`docs/eval/PHASE0_CORPUS.md`. This is *not* an evaluation set — it's
+a fixture, discarded for reporting.
+
+> **Note on STOP-path coverage.** Phase 0 calibration probes only the
+> `failure_mode == "timeout"` deliberate-STOP sub-path. The
+> `terminal_intentional_failure` sub-path
+> (`is_expected_failure=True AND retryable=False`) fires only when
+> `IntentStage` classifies the user's request text as
+> `EXPECTED_ERROR` / `TRACEBACK_DEMO`; deliberately constructing such
+> prompts would leak intent into the calibration corpus. The
+> architectural gap (governor has no history-based unrecoverability
+> detector) is documented in `docs/KNOWN_LIMITATIONS.md` L3 and
+> motivated the v3 narrowing of Tier B (next section).
 
 **Calibration deliverable**: `docs/eval/PHASE0_CALIBRATION.md` —
 the table above with concrete numbers, plus a "go / no-go" line. If
@@ -204,53 +217,93 @@ coverage on the measured paths is 100%. If a future axis introduces
 image-bearing tasks (e.g., UI reproduction), the vision skills must
 be re-routed through `LLMClient` before that axis can ship measured.
 
-### Tier B — requires Phase-2's recoverability oracle
+### Tier B — DEFERRED (out of current governor scope)
+
+> **Status (v3): deferred.** The governor classify/policy audit
+> (`reforge/runtime/classification/classifier.py:24-75`,
+> `reforge/runtime/policy/retry_policy.py:19-53`,
+> `reforge/runtime/orchestration/governor/classify_stage.py`,
+> `reforge/runtime/policy/task_intent.py`) confirmed there is no
+> history-based unrecoverability detector. Deliberate STOPs fire only
+> from `is_expected_failure=True AND retryable=False` (set exclusively
+> when IntentStage's LLM classifies the *user request text* as
+> `EXPECTED_ERROR` / `TRACEBACK_DEMO`) or `failure_mode == "timeout"`
+> (set when sandbox watchdog kills the process). All other decoys —
+> resolver failure, missing env dep, logically unsatisfiable,
+> self-contradictory — collapse to
+> `execution_error → retryable=True → RETRY → budget exhaustion`.
+>
+> Tier B's `false-stop`, `deliberate-STOP precision`,
+> `deliberate-STOP recall`, and `deliberate-STOP calibration` metrics
+> all presume a recognizer that does not exist. Reporting them on
+> Phase-2 decoys would yield near-zero numbers that measure an absent
+> feature, not the runtime's actual capability. They are deferred
+> until / unless the governor gains a pattern-based or learned
+> unrecoverability detector (the architectural gap is recorded in
+> `docs/KNOWN_LIMITATIONS.md` L3).
+>
+> **The decoy-diversity constraint (≥3 root-cause categories, no
+> single >40%) is also dropped** — under the current governor, decoy
+> "category" is not a measurement axis the runtime can distinguish,
+> so the constraint would test corpus composition without coupling to
+> any runtime behavior.
+>
+> **What Phase 2 retains from Tier B**:
+> - **Timeout-class deliberate-STOP efficiency (new, narrow)**. On
+>   timeout-triggering tasks (and on EXPECTED_ERROR-intent tasks if
+>   any are included), governor's deliberate STOP avoids the full
+>   `(config.max_retry + 1) × T_attempt` budget burn the naive
+>   baseline incurs. With defaults (`config.max_retry = 3`,
+>   `EXECUTION_TIMEOUT = 30s`) the wall-clock delta is
+>   `~30s` (governor) vs `~120s` (naive), plus a 4× codegen-LLM-turn
+>   token delta. Reported as paired-delta on `attempts_per_case`,
+>   `wall_clock_per_case`, and `tokens_per_case` over the timeout
+>   slice. This is the narrow efficiency win that survives the
+>   architectural audit.
+> - `false-retry rate` is **dropped, not retained**. On a
+>   timeout-only decoy slice it collapses to a binary restatement of
+>   the timeout-deliberate-STOP efficiency point above (governor 0%,
+>   naive 100% by construction); on non-timeout decoys both modes
+>   are at ~100% with no measurable delta. Either way it adds no
+>   independent signal, so it goes with the rest of Tier B rather
+>   than being kept as a residual.
+>
+> **What Phase 2 stops claiming**: that governor recognizes *generic*
+> unrecoverability across diverse failure root causes. That claim was
+> upstream of an unverified capability. The eval chapter will state
+> the narrowed scope explicitly.
+
+The original Tier B definitions below are kept for reference so that
+a future governor change which adds an unrecoverability detector can
+re-enable them without re-deriving the formulas. They are NOT
+reported in the current eval chapter.
+
+<details>
+<summary>Original Tier B definitions (deferred, retained for reference)</summary>
 
 These three need a ground-truth `task_kind ∈ {recoverable, decoy}` per
 case, which only Phase 2 provides (BIRD has no notion of "unsolvable
-by design"). We list them here so the definitions are locked early.
+by design").
 
 **Definition: deliberate STOP.** Throughout Tier B we distinguish two
 kinds of STOP:
 - **Deliberate STOP** — issued *while budget remains* via the typed
   classification path (`is_expected_failure=True` or a terminal
-  failure_mode that the governor recognizes as unrecoverable). This
-  is the governor saying "more attempts won't help."
+  failure_mode that the governor recognizes as unrecoverable).
 - **Budget-exhausted STOP** — issued because `retry_count == max_retry`.
-  Both modes hit this; it is not evidence of judgement.
-
-Naive baseline has **zero deliberate STOPs by construction** — it only
-issues STOP when budget runs out. That asymmetry is exactly the
-ablation surface, not a measurement bug.
-
-**Decoy diversity constraint (pre-registered).** For the
-deliberate-STOP metrics to measure "recognizing unrecoverability" as a
-general capability — rather than "recognizes `.invalid` URLs" — the
-Phase-2 decoy slice MUST cover **≥3 distinct root-cause categories**,
-no single category exceeding ~40% of decoys. Locked categories:
-
-1. **Resolver / dependency failure** (e.g., RFC2606 `.invalid` host,
-   import of non-existent module).
-2. **Logically unsatisfiable constraint** (e.g., "find a prime < 4
-   that is even and > 2").
-3. **Missing environment dependency** (e.g., requires a credential /
-   file / network resource not present in the sandbox).
-4. **Self-contradictory requirements** (e.g., "sort ascending and
-   simultaneously preserve original order, do not stable-sort").
-
-A trivial grep-style rule (e.g., `if ".invalid" in request: STOP`)
-must NOT achieve the headline deliberate-STOP precision. We will
-spot-check this by computing the precision a naive keyword-rule
-baseline would achieve on our decoy mix; if that ceiling is >50% the
-mix is too easy and gets rebalanced before Phase 2 runs.
 
 | Metric | Formula | Notes |
 |---|---|---|
-| **False-retry rate** | `count(decoy cases with ≥1 RETRY decision) / count(decoy cases)`. Counted per *case*, not per decision, so larger budgets don't inflate the rate. On a decoy, any RETRY is wasted budget. | Reported only on Phase-2's decoy slice. Bypass naturally retries until budget exhaustion → near-100% by construction. Governor's lift is the gap. |
-| **False-stop rate (paired)** | `count(recoverable cases where naive(seed) solved within full budget AND governor(seed) issued a deliberate STOP AND did NOT solve) / count(recoverable cases where naive solved)`. Uses naive's success at full budget as the **proof of recoverability** on a per-(case,seed) basis — i.e., the case is recoverable *in this run* because the other arm just demonstrated it. This is paired evidence; it does not depend on a synthetic ground-truth label of "recoverable." | Reported only on Phase-2's recoverable slice. Pair-conditional: the case-seed cell only contributes if naive solves it. |
-| **Deliberate-STOP precision** | `count(deliberate STOPs on decoy cases) / count(deliberate STOPs)`. The positive class is deliberate STOPs only — budget-exhaustion STOPs are excluded from both numerator and denominator. | Reported on Phase-2 only. Naive's denominator = 0 by construction → metric N/A for naive, which is the differentiation, not a problem. |
-| **Deliberate-STOP recall** | `count(deliberate STOPs on decoy cases) / count(decoy cases)`. Of all unrecoverable cases, what fraction did the runtime correctly recognize *before* budget ran out. | Same. Naive's recall = 0 by construction. |
-| **Deliberate-STOP calibration** | If the governor exposes a confidence (`is_expected_failure=True` as high-confidence vs a generic terminal classification as low-confidence), bin and check accuracy vs `task_kind ∈ {decoy, recoverable}`. If no confidence axis is exposed, report a single (precision, recall) point and note the absence. | Final format decided after auditing the actual `RuntimeResolution` fields on real Phase-2 runs. |
+| **False-stop rate (paired)** | `count(recoverable cases where naive(seed) solved within full budget AND governor(seed) issued a deliberate STOP AND did NOT solve) / count(recoverable cases where naive solved)`. Uses naive's success at full budget as the **proof of recoverability** on a per-(case,seed) basis. | Pair-conditional: the case-seed cell only contributes if naive solves it. |
+| **Deliberate-STOP precision** | `count(deliberate STOPs on decoy cases) / count(deliberate STOPs)`. | Naive's denominator = 0 by construction → metric N/A for naive. |
+| **Deliberate-STOP recall** | `count(deliberate STOPs on decoy cases) / count(decoy cases)`. | Naive's recall = 0 by construction. |
+| **Deliberate-STOP calibration** | If the governor exposes a confidence axis, bin and check accuracy vs `task_kind`. | Final format decided after auditing the actual `RuntimeResolution` fields on real Phase-2 runs. |
+
+Original decoy-diversity constraint (deferred): ≥3 root-cause
+categories spanning resolver failure, logically unsatisfiable, missing
+environment dependency, self-contradictory requirements.
+
+</details>
 
 ### Significance decision rule (pre-registered)
 
@@ -277,8 +330,9 @@ rule after the fact would be p-hacking by another name.
 - **CI**: every delta cites the 95% CI half-width. If the CI crosses
   zero we say so explicitly — we do not bold the mean.
 - **Per-difficulty breakout** (BIRD only): the headline table averages
-  over difficulty; an appendix table splits by `{easy, medium,
-  challenging}`.
+  over difficulty; an appendix table splits by `{simple, moderate,
+  challenging}` (BIRD's actual labels — earlier drafts said
+  `{easy, medium, challenging}` which was incorrect).
 - **Wallclock / token**: reported as paired delta + raw governor-mode
   number so the reader can sanity-check magnitude.
 - **Negative results**: if `delta` is non-significant we keep the
@@ -344,20 +398,120 @@ Changes from v1 in response to reviewer corrections:
     scope sentence: token coverage = 100% of measured corpora because
     BIRD/pandas-CSV contain no image inputs.
 
+## Revision log (v3 — Phase-0 corpus governor audit)
+
+Changes from v2 after auditing the governor's classify/policy code
+paths to validate that the originally proposed D1′ (FileNotFoundError
+decoy) would actually trigger deliberate-STOP. Audit conclusion: it
+would NOT. The governor has no history-based unrecoverability
+detector, so any NORMAL_EXECUTION-intent task whose first attempt
+yields non-timeout `exit_code != 0` is RETRY'd until
+`retry_count == max_retry` → `retry_limit_reached_*` STOP
+(budget-exhausted, NOT deliberate). Deliberate STOPs fire only from
+(a) `is_expected_failure=True AND retryable=False` — set exclusively
+when IntentStage classifies the *user request text* as
+`EXPECTED_ERROR` / `TRACEBACK_DEMO`; or (b) `failure_mode == "timeout"`
+— set exclusively when sandbox watchdog kills the process.
+
+Decisions taken (option α + β; option γ — governor surface extension —
+deliberately not taken):
+
+1. **Phase-0 deliberate-STOP probe rebased** from D1′
+   (FileNotFoundError) to **D1″** (timeout: `Loop forever printing
+   tick` → `EXECUTION_TIMEOUT=30s` watchdog →
+   `failure_mode == "timeout"` → deliberate STOP). Probes the
+   `retry_policy.py:34-35` branch. The terminal_intentional sub-path
+   is structurally out of calibration scope (any prompt that fires it
+   would leak intent into the corpus).
+2. **Tier B (false-stop, deliberate-STOP precision/recall,
+   calibration) marked DEFERRED**, with a banner explaining the
+   architectural gap and the narrowed Phase-2 surface. Original
+   definitions retained in a collapsed block for future re-enablement.
+3. **Decoy-diversity constraint (≥3 root-cause categories, no single
+   >40%) dropped**. Under the current governor, non-timeout decoy
+   "category" does not influence runtime behavior, so the constraint
+   would gate corpus composition without coupling to a measured
+   capability.
+4. **Phase 2 thesis narrowed**. Headline claim becomes "governor's
+   typed classification + memory-driven retry-hint improves recovery
+   on recoverable failures" (recovery rate, attempts on solved,
+   tokens per solved). Separate narrow efficiency claim: "on
+   timeout-class failures, deliberate STOP saves attempts /
+   wall-clock / tokens vs naive's blind retry-to-budget." Phase 2
+   no longer claims generic unrecoverability recognition. The
+   `false-retry rate` is retained as a documented baseline-vs-governor
+   comparison, but its interpretation is explicitly narrowed.
+5. **`BIRD-easy` → `BIRD-simple`** throughout. BIRD's difficulty
+   labels are `{simple, moderate, challenging}`; the v1/v2
+   `BIRD-easy` was a misnomer.
+6. **Calibration STOP-path gate rescoped** to
+   `policy_reason == "timeout"` on D1″ (was: `is_expected_failure=True
+   OR terminal classification` on an unspecified decoy).
+7. **Architectural gap recorded** as `docs/KNOWN_LIMITATIONS.md` L3
+   (STOP scope is intent + timeout, no history-based detector).
+   Considered a pattern-based detector (≥N same-signature tracebacks
+   → flip `retryable=False`); rejected for now because its precision
+   on real workloads is unverified (same FileNotFoundError next
+   attempt CAN recover if the codegen writes the file or changes the
+   path) and adopting it would change the system-under-test
+   mid-experiment.
+8. **Pre-commit cross-check (three findings, pre-freeze)**:
+   - `false-retry rate` **dropped** (was tentatively "retained,
+     narrowed" in the v3 draft). On a timeout-only decoy slice it is
+     a binary restatement of the timeout-deliberate-STOP efficiency
+     point; on non-timeout decoys both modes are at ~100% with no
+     measurable delta. Removed rather than left as a residual
+     between Tier A and Tier B.
+   - Calibration STOP-path gate field changed from
+     `policy_reason == "timeout"` to
+     `state.classification_result.failure_mode == "timeout"`.
+     `policy_reason` is alive
+     (`reforge/runtime/domain/state/models.py:150`, tested in
+     `test_node_mutation_removed.py:101-106`) but its value passes
+     through `outcome_resolver.resolve_outcome` and gets reinterpreted
+     by intent overrides — STRESS_TEST + `EXECUTION_TIMEOUT` →
+     `(SUCCESS, "task_fidelity_achieved")` (`outcome_resolver.py:48-51`).
+     `failure_mode` is set in `classifier.py:36-40` before any
+     task_intent branch, so it is intent-independent and reflects the
+     actual code path under test.
+   - D1″ prompt rebased from `Loop forever printing "tick" once per
+     second.` to `Sleep for 120 seconds, then print "ok".` The first
+     prompt matched STRESS_TEST's few-shot examples in
+     `task_intent.py:42-43` and would have triggered the intent
+     override above, hijacking `policy_reason` and reframing the
+     STOP as success. The sleep prompt deliberately falls back to
+     NORMAL_EXECUTION (no STRESS_TEST / EXECUTION_TIMEOUT override
+     applies), so the deliberate-STOP path is isolated cleanly.
+   - `config.max_retry` confirmed = 3 (default,
+     `reforge/config.py:18`); both `retry_decision_node.py:74`
+     (governor) and `retry_decision_node.py:50` (`_naive_resolution`)
+     read it. `ExecutionGovernor.__init__(max_retries=2)` and
+     `PolicyStage.__init__(max_retries=2)` defaults are dead in the
+     production path (overridden at instantiation). D1″ wall-clock
+     math corrected: `initial + 3 retries = 4 attempts × ~30s = ~120s`
+     for naive vs `1 attempt × ~30s = ~30s` for governor.
+
 ## Status
 
-**Signed off (v2 + sig-rule + decoy-diversity, this commit).** This
-file is the pre-registration record. The commit hash of this file at
-sign-off is the reference any downstream eval-chapter number must
-cite. Subsequent edits are tracked via the revision log above; any
+**Signed off (v3 + Tier B defer + α/β narrowing, this commit).** v3
+supersedes v2; v2's headline-CI rule, significance rule, sentinel
+rule, decoy ban on result-direction gates, paired-delta formulas, and
+N_seeds choices all carry forward unchanged. This file remains the
+pre-registration record. The commit hash of this file at sign-off is
+the reference any downstream eval-chapter number must cite. Any
 post-data edit that loosens a metric or relaxes the significance rule
 must be flagged in the eval chapter as a post-hoc change with the
 reason it was made.
 
-Phase-0 calibration decoy: `http://example.invalid/...` (RFC2606
-reserved TLD, resolver-layer determinism) — accepted.
+Phase-0 calibration deliberate-STOP probe: **D1″** (timeout) — see
+`docs/eval/PHASE0_CORPUS.md`. D1′ (FileNotFoundError) and the v2
+`http://example.invalid/...` resolver-failure decoy are both
+deprecated by this audit (would not have triggered deliberate-STOP
+under the current governor).
 
-Open prerequisite before Phase 1: token-accounting access on
-`RuntimeState`. To be audited read-only next; results reported as a
-fact, then a decision made on whether the instrumentation PR is
-required as a Phase-1 blocker.
+Token-accounting prerequisite resolved: harness-side
+`token_accounting(case_id, seed)` context manager landed in commit
+`47d1091` (`reforge/observability/llm_events.py`); measurement does
+not touch `RuntimeState` or governor decision surface. Vision-skill
+coverage gap documented as `docs/KNOWN_LIMITATIONS.md` L2; the eval
+corpora contain no image inputs, so measured-path coverage is 100%.
