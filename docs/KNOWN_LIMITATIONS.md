@@ -356,3 +356,72 @@ bug, and Phase 1 / Phase 2 ship within the narrowed scope above.
   deliberate-STOP paths without adding new ones.
 
 ---
+
+## L4. Constructor `max_retries` defaults (=2) diverge from `config.max_retry` (=3)
+
+### Symptom
+
+Four constructors / argument signatures carry the same hardcoded
+default for max retries:
+
+| Location | Signature |
+|---|---|
+| `reforge/runtime/policy/retry_policy.py:25` (`RetryPolicy.decide()` parameter) | `max_retries: int = 2` |
+| `reforge/runtime/policy/policy_engine.py:21` (`PolicyEngine.__init__`) | `max_retries: int = 2` |
+| `reforge/runtime/orchestration/governor/policy_stage.py:12` (`PolicyStage.__init__`) | `max_retries: int = 2` |
+| `reforge/runtime/orchestration/governor/engine.py:31` (`ExecutionGovernor.__init__`) | `max_retries: int = 2` |
+
+The production runtime path goes through
+`reforge/runtime/orchestration/graph/nodes/retry_decision.py:74`:
+
+```python
+governor = ExecutionGovernor(max_retries=config.max_retry)
+```
+
+which reads `config.max_retry = int(os.getenv("MAX_RETRY", "3"))`
+(`reforge/config.py:18`). The bypass `_naive_resolution`
+(`retry_decision.py:50`) likewise reads `config.max_retry` directly.
+**So in production all four constructor defaults are dead.**
+
+### Why this is a seam
+
+- **Test surface**: every unit test that instantiates these classes
+  without passing `max_retries=` silently runs at budget `2`, not the
+  production budget `3`. Behavioral assertions about "after the third
+  RETRY, governor STOPs" are sensitive to this one-attempt gap.
+- **Future callers**: anyone wiring a new entry point that omits the
+  config injection silently gets budget `2` and won't notice until a
+  production case differs from a unit-test case by one retry.
+
+### Right fix (deferred)
+
+Either:
+- Drop the default entirely (make `max_retries` required), forcing
+  every call site — tests included — to pass an explicit value; or
+- Read `config.max_retry` lazily inside each constructor
+  (`max_retries: int | None = None` + `if max_retries is None:
+  max_retries = config.max_retry`), giving one source of truth.
+
+### Why defer
+
+- Cross-cuts test fixtures (`test_full_consistency_integration.py`,
+  `test_policy_with_intent.py`, etc.) and lands as a separate
+  cleanup PR after the eval framework is in place.
+- Not on the eval measurement path: Phase 0 / 1 / 2 all go through
+  `retry_decision_node`, where `config.max_retry` is injected. No
+  measured result depends on the constructor default; this entry is
+  reviewer-visibility insurance, not a calibration blocker.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Quietly changing the default from `2` to `3` to "match
+  production". Hides the divergence; tests pinned to a "2-retry"
+  behavior would start producing different traces without anyone
+  updating the assertion.
+
+### Acceptable in-place edits while deferred
+
+- New tests / new call sites that pass `max_retries=config.max_retry`
+  explicitly, so the dead-default surface area does not grow.
+
+---
