@@ -1,16 +1,17 @@
 """Code generation node — emit Python code, augmented with retry context.
 
-Two routes:
+Two routes, chosen per attempt by `bool(state.image_inputs)`:
   * Text: the default — `LLMClient().chat(...)` for data / general tasks.
-  * Vision: when state.vision_routing.use_vision is True (set by the
-    upstream vision_routing_node), call `LLMClient.for_vision_codegen()
-    .chat_multimodal` with the discovered target images so the LLM sees
-    the pixels. Text descriptions of a UI lose ~90% of the signal
-    (spatial layout, exact colors, font weight).
+  * Vision: when the caller declared input images on the task, call
+    `LLMClient.for_vision_codegen().chat_multimodal` with those images so
+    the LLM sees the pixels. Text descriptions of a UI lose ~90% of the
+    signal (spatial layout, exact colors, font weight).
 
-The routing decision (regex + filesystem scan) lives in
-`graph.vision_routing` and is computed once by `vision_routing_node` —
-this node only *reads* state.vision_routing, never touches the filesystem.
+`state.image_inputs` is task-level immutable — populated once by
+`RuntimeRunner.stream()` from the caller and never mutated by any graph
+node. That's how "data-task produced PNG happens to live in workspace"
+no longer false-routes to vision: routing depends on declaration, not
+filesystem state.
 """
 
 from __future__ import annotations
@@ -84,11 +85,8 @@ def code_generation_node(state: RuntimeState) -> dict:
     if reqs and reqs.expects_uncaught_exception:
         extra_system.append(EXPECTS_UNCAUGHT_OVERRIDE)
 
-    routing = state.vision_routing
-    use_vision = bool(routing and routing.use_vision)
-    target_images: list[Path] = (
-        [Path(p) for p in routing.target_images] if use_vision and routing else []
-    )
+    use_vision = bool(state.image_inputs)
+    target_images: list[Path] = [Path(p) for p in state.image_inputs]
 
     base_system = VISION_CODEGEN_SYSTEM if use_vision else CODE_GENERATION_SYSTEM
     system_prompt = base_system

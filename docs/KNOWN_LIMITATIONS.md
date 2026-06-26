@@ -101,8 +101,10 @@ the same change.
   (review item ⑧). These touch lines but not behavior.
 - Behavior-changing-but-isolated fixes that are demonstrably wrong
   *given the current design* (e.g., the `\bUI\b` word-boundary fix
-  in `vision_routing.py` — review item ②, already shipped). These
-  buy time without making the larger problem worse.
+  in the legacy `graph/vision_routing.py` — review item ②, shipped
+  while that module still existed; the module itself was later
+  removed in the `image_inputs` refactor, see L7). These buy time
+  without making the larger problem worse.
 
 ---
 
@@ -663,5 +665,99 @@ relative to execution-error retries in the policy.
 - Tightening the LLM evaluator's prompt on **non-eval** corpora
   (the demo / regression suite), as long as those changes do not
   flow into the Phase 1 / Phase 2 governor surface.
+
+---
+
+## L7. Visual codegen has no CLI entry point — programmatic-only
+
+### Symptom
+
+The CLI `reforge run "<prompt>"` (`reforge/cli/commands/run.py`) does
+not accept image attachments. Visual reproduction tasks that need to
+route through the multimodal codegen LLM
+(`LLMClient.for_vision_codegen().chat_multimodal(...)`) can only be
+launched programmatically via:
+
+```python
+RuntimeRunner().run(user_request, image_inputs=["/abs/path/target.png", ...])
+```
+
+### History
+
+Before the `image_inputs` refactor, visual reproduction was reachable
+through the CLI only via a filesystem convention: the user cd'd into
+a workspace, manually placed `target.{png,jpg,jpeg,webp}` in `cwd()`,
+and ran `reforge run "复刻 …"`. A `vision_routing_node` then did a
+double-gate match (visual-intent regex on the request × filesystem
+scan for the magic filenames) and wrote the routing decision onto
+state for `code_generation_node` to consume.
+
+That implicit path has been removed. Routing is now driven by an
+explicit `state.image_inputs` declaration provided by the caller, not
+by guessing intent from prose plus scanning the workspace. The
+disambiguation between "user-declared input image" and "data task
+produced PNG that happens to live in the workspace" is now structural
+(only what the caller declared lands in image_inputs; a loop-boundary
+invariant in `RuntimeRunner.stream` prevents any graph node from
+mutating the field). The trade-off is that the CLI lost its sole
+visual entry point in the same change.
+
+### Right fix (deferred)
+
+Add a `--image PATH` flag to `cli/commands/run.py` (repeatable for
+multiple inputs):
+
+```bash
+reforge run --image ./target.png "复刻 target.png 前端页面"
+```
+
+The flag would collect into a list and pass it through to
+`RuntimeRunner.run(image_inputs=...)`. Validation of path existence
+and basic image format checks belong at the CLI boundary, not in the
+Runner.
+
+### Why defer
+
+- **Scope discipline.** The `image_inputs` refactor was a routing /
+  state-shape change with a hard fence against touching neighbour
+  files. Bundling a CLI flag would have inflated the diff and risked
+  test churn unrelated to the routing decision.
+- **No measured eval path depends on it.** Phase 0 / 1 / 2 corpora
+  are SQL and pandas/CSV (no image inputs); the calibration driver
+  goes through the Python API directly, not the CLI.
+- **The Python API is sufficient for the visual self-heal demo.**
+  Programmatic callers (including the existing visual reproduction
+  workspace) can switch to `RuntimeRunner.run(..., image_inputs=...)`
+  in one line; the CLI flag is convenience, not unblocker.
+
+### Trigger to revisit
+
+- A user-facing demo / docs flow needs `reforge run` (the CLI) to
+  cover the visual reproduction loop.
+- A measured eval axis adds image-bearing tasks and needs the CLI
+  for case-loader-driven invocation.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Re-introducing a filesystem scan or visual-intent regex
+  inside the CLI as a "fallback when no `--image` is passed". That
+  resurrects the exact gate this refactor removed and re-opens the
+  data-task-produced-PNG false-positive surface.
+- ❌ Reading `image_inputs` from an environment variable or
+  workspace-local config file as a CLI-side shim. Same anti-pattern
+  wearing a different hat — it routes the decision through an
+  implicit channel instead of an explicit kwarg.
+- ❌ Adding the flag in the same PR as the routing refactor. The
+  routing refactor's fence ("do not touch neighbour files") is the
+  reason its diff is reviewable; a CLI surface change is a separate
+  conversation about flag naming, validation, and `--image @file.list`
+  expansion that deserves its own PR.
+
+### Acceptable in-place edits while deferred
+
+- Updating the Python-API examples in README / docs to demonstrate
+  the `image_inputs=...` kwarg.
+- Adding a docstring on `RuntimeRunner.run` that points at this L7
+  entry as the reason there is no equivalent CLI flag yet.
 
 ---

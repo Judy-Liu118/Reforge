@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from pathlib import Path
 
 from reforge.config import config
 from reforge.memory.substrate import CompositeMemorySubstrate, MemorySubstrate
@@ -34,7 +33,6 @@ class RuntimeRunner:
         memory_substrate: MemorySubstrate | None = None,
         event_log: ExecutionEventLog | None = None,
         conversation_id: str | None = None,
-        workspace_dir: Path | None = None,
     ) -> None:
         self._session_id = uuid.uuid4().hex[:8]
         # One ExecutionContext per runner — its trace_id stamps every emitted
@@ -52,40 +50,55 @@ class RuntimeRunner:
         self._memory_substrate: MemorySubstrate = (
             memory_substrate if memory_substrate is not None else CompositeMemorySubstrate()
         )
-        # Workspace defaults to Path.cwd() — same place the sandbox writes
-        # target.png and runs the generated script. Pass workspace_dir
-        # explicitly from tests / non-cwd-based callers to avoid chdir.
-        self._workspace_dir = workspace_dir if workspace_dir is not None else Path.cwd()
         self._graph = build_graph(
             memory_substrate=self._memory_substrate,
             event_log=self._event_log,
             context=self._context,
-            workspace_dir=self._workspace_dir,
         )
         self._collector: TraceCollector | None = None
         self._trajectory_store = trajectory_store
 
-    def run(self, user_request: str) -> RuntimeState:
-        """Run the full workflow and return the final state."""
+    def run(
+        self,
+        user_request: str,
+        image_inputs: list[str] | None = None,
+    ) -> RuntimeState:
+        """Run the full workflow and return the final state.
+
+        Pass image_inputs=[...] to declare visual inputs for the task; codegen
+        will route to the multimodal LLM per attempt when this list is non-empty.
+        """
         final_state: RuntimeState | None = None
-        for _node_name, state in self.stream(user_request):
+        for _node_name, state in self.stream(user_request, image_inputs=image_inputs):
             final_state = state
         if final_state is None:
             raise RuntimeError("Graph produced no output")
         return final_state
 
     def stream(
-        self, user_request: str, collector: TraceCollector | None = None,
+        self,
+        user_request: str,
+        collector: TraceCollector | None = None,
+        image_inputs: list[str] | None = None,
     ) -> Iterator[tuple[NodeName, RuntimeState]]:
         """Stream node executions, yielding (node_name, full_state) after each node.
 
         An optional TraceCollector receives structured events for each node.
+        image_inputs declares visual inputs; once set on the initial state it is
+        task-level immutable — see the invariant check inside the chunk loop.
         """
         if collector is None:
             collector = TraceCollector(session_id=self._session_id)
         self._collector = collector
 
-        initial = RuntimeState(user_request=user_request)
+        initial = RuntimeState(
+            user_request=user_request,
+            image_inputs=list(image_inputs) if image_inputs is not None else [],
+        )
+        # Snapshot for the loop-boundary invariant: image_inputs is task-level
+        # immutable. Snapshot eagerly (list copy) so future code that reuses
+        # `initial` as a mutable accumulator can't silently void the check.
+        initial_imgs = list(initial.image_inputs)
         current = initial
 
         for chunk in self._graph.stream(initial, stream_mode="updates"):
@@ -93,6 +106,18 @@ class RuntimeRunner:
                 if node_update:
                     merged = current.model_dump() | node_update
                     current = RuntimeState.model_validate(merged)
+                # Loop-boundary invariant: no graph node may mutate image_inputs.
+                # The codegen node's vision-route decision depends on the caller's
+                # declaration, not on any mid-loop side effect (e.g. data tasks
+                # writing chart.png into workspace must NOT route through vision
+                # on the next attempt). Violation fails loud rather than relying
+                # on convention.
+                if current.image_inputs != initial_imgs:
+                    raise RuntimeError(
+                        f"invariant violated: image_inputs mutated mid-loop "
+                        f"after node={node_name!r} "
+                        f"(initial={initial_imgs!r}, current={current.image_inputs!r})"
+                    )
                 collector.on_node(node_name, current)
                 if node_name == "final_response":
                     if self._trajectory_store:

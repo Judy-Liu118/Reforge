@@ -51,7 +51,14 @@ class TestFlatFieldsRemoved:
             assert nested in declared, f"missing nested sub-state {nested}"
 
     def test_payload_fields_remain_top_level(self) -> None:
-        """Pure input/output payloads stay flat — they have no sub-state home."""
+        """Pure input/output payloads stay flat — they have no sub-state home.
+
+        image_inputs is a task-level input declared once by the caller through
+        RuntimeRunner.run(image_inputs=...); it is intentionally NOT a governed
+        fragment field. The "no flat field" rule is about removing legacy
+        dual-write fields that duplicate nested sub-state, not about banning
+        new top-level inputs.
+        """
         declared = set(RuntimeState.model_fields.keys())
         for payload in (
             "user_request",
@@ -60,6 +67,7 @@ class TestFlatFieldsRemoved:
             "task_requirements",
             "capability_decision",
             "classification_result",
+            "image_inputs",
         ):
             assert payload in declared, (
                 f"payload field {payload} should remain top-level"

@@ -12,7 +12,6 @@ from reforge.runtime.domain.state.models import (
     RuntimeState,
     SemanticState,
     TaskRequirements,
-    VisionRouting,
 )
 
 __all__ = [
@@ -29,5 +28,4 @@ __all__ = [
     "RuntimeState",
     "SemanticState",
     "TaskRequirements",
-    "VisionRouting",
 ]

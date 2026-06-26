@@ -22,14 +22,13 @@ class TestWorkflowSlim:
     def test_workflow_module_is_builder_only(self) -> None:
         """workflow.py should hold only build_graph and imports, not node bodies.
 
-        Budget raised from 100 → 130 after adding vision_routing node + its
-        workspace_dir wiring (~15 lines). The invariant guarded here is "no
-        business logic in workflow.py", not a literal line count — the
-        complementary test_workflow_does_not_define_node_functions enforces
-        the actual no-node-body rule.
+        The invariant guarded here is "no business logic in workflow.py", not a
+        literal line count — the complementary
+        test_workflow_does_not_define_node_functions enforces the actual
+        no-node-body rule.
         """
         workflow_lines = _line_count(_GRAPH_DIR / "workflow.py")
-        assert workflow_lines < 130, f"workflow.py grew to {workflow_lines} lines"
+        assert workflow_lines < 110, f"workflow.py grew to {workflow_lines} lines"
 
     def test_workflow_does_not_define_node_functions(self) -> None:
         """No `_xxx_node` private function should be *defined* in workflow.py.
@@ -64,7 +63,6 @@ class TestNodesModuleStructure:
         "retry_decision",
         "final_response",
         "capability",
-        "vision_routing",
     )
 
     def test_each_node_file_exists(self) -> None:
@@ -94,7 +92,6 @@ class TestNodesModuleStructure:
             "capability_node",
             "route_after_capability",
             "should_retry",
-            "vision_routing_node",
         ):
             assert hasattr(nodes, symbol), f"nodes.{symbol} missing"
 

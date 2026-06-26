@@ -14,15 +14,7 @@ around each lifecycle transition.  When omitted, behavior is unchanged.
 An ExecutionContext may be passed via *context*. When set, it supersedes the
 loose *session_id* argument and threads trace_id through every emitted event so
 the dashboard can pivot a multi-session investigation back to one request.
-
-*workspace_dir* tells vision_routing_node where to look for target images
-(target.png/.jpg/...). It defaults to Path.cwd() — same effective location
-the sandbox uses — but is explicit so tests can redirect to tmp_path without
-chdir, and so the dependency on cwd lives at one named injection point
-instead of being hidden inside a node.
 """
-
-from pathlib import Path
 
 from reforge.memory.substrate import MemorySubstrate
 from reforge.runtime.events.emitters import (
@@ -46,7 +38,6 @@ from reforge.runtime.orchestration.graph.nodes import (
     retry_decision_node,
     route_after_capability,
     should_retry,
-    vision_routing_node,
 )
 from reforge.runtime.domain.state.models import RuntimeState
 
@@ -56,12 +47,10 @@ def build_graph(
     event_log: ExecutionEventLog | None = None,
     session_id: str = "",
     context: ExecutionContext | None = None,
-    workspace_dir: Path | None = None,
 ) -> StateGraph:
     if context is not None:
         session_id = context.session_id
     trace_id = context.trace_id if context is not None else None
-    workspace = workspace_dir if workspace_dir is not None else Path.cwd()
 
     graph = StateGraph(RuntimeState)
 
@@ -71,9 +60,6 @@ def build_graph(
     def _reflection_base(state: RuntimeState) -> dict:
         return reflection_node(state, substrate=memory_substrate)
 
-    def _vision_routing(state: RuntimeState) -> dict:
-        return vision_routing_node(state, workspace=workspace)
-
     _execution = wrap_execution_node(execution_node, event_log, session_id, trace_id=trace_id)
     _evaluation = wrap_evaluation_node(evaluation_node, event_log, session_id, trace_id=trace_id)
     _reflection = wrap_reflection_node(_reflection_base, event_log, session_id, trace_id=trace_id)
@@ -82,7 +68,6 @@ def build_graph(
 
     graph.add_node("planner", _planner)
     graph.add_node("capability_check", capability_node)
-    graph.add_node("vision_routing", _vision_routing)
     graph.add_node("code_generation", code_generation_node)
     graph.add_node("execution", _execution)
     graph.add_node("reflection", _reflection)
@@ -95,16 +80,12 @@ def build_graph(
     graph.add_conditional_edges(
         "capability_check",
         route_after_capability,
-        {"code_generation": "vision_routing", "final_response": "final_response"},
+        {"code_generation": "code_generation", "final_response": "final_response"},
     )
-    graph.add_edge("vision_routing", "code_generation")
     graph.add_edge("code_generation", "execution")
     graph.add_edge("execution", "reflection")
     graph.add_edge("reflection", "evaluation")
     graph.add_edge("evaluation", "retry_decision")
-    # Retry path goes directly to code_generation — the vision_routing
-    # decision cached on state.vision_routing is reused (user_request and
-    # workspace are stable, so re-running it would just repeat the FS scan).
     graph.add_conditional_edges(
         "retry_decision",
         should_retry,

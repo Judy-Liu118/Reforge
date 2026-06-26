@@ -309,7 +309,7 @@ def _run_toy_case(toy: ToyCase, *, mode: str, seed: int) -> CalibrationRecord:
                 prev_cwd = Path.cwd()
                 os.chdir(workspace)
                 try:
-                    runner = RuntimeRunner(workspace_dir=workspace)
+                    runner = RuntimeRunner()
                     state = runner.run(toy.prompt)
                 finally:
                     os.chdir(prev_cwd)

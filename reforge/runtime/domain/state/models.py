@@ -168,19 +168,6 @@ class OutcomeState(BaseModel):
     final_answer: str | None = Field(default=None)
 
 
-class VisionRouting(BaseModel):
-    """Owner: vision_routing_node. Decision computed before code generation.
-
-    Captures both the boolean route decision and the concrete target image
-    paths so code_generation_node never has to touch the filesystem itself.
-    `target_images` are absolute paths as strings (Path is non-JSON-native
-    and would complicate state serialization across LangGraph chunks).
-    """
-
-    use_vision: bool = Field(default=False)
-    target_images: list[str] = Field(default_factory=list)
-
-
 class RuntimeState(BaseModel):
     """Typed runtime state for the self-healing loop.
 
@@ -198,7 +185,11 @@ class RuntimeState(BaseModel):
     task_requirements: Optional[TaskRequirements] = Field(default=None)
     capability_decision: Optional[dict] = Field(default=None)
     classification_result: Optional[FailureClassification] = Field(default=None)
-    vision_routing: Optional[VisionRouting] = Field(default=None)
+    # Task-level immutable: written only at session construction by RuntimeRunner.
+    # Mid-loop append is reserved for future screenshot capture but is intentionally
+    # not wired — any node return dict that mutates this is caught by the chunk-loop
+    # invariant in RuntimeRunner.stream and raised as a hard error.
+    image_inputs: list[str] = Field(default_factory=list)
 
     # --- Nested sub-states — canonical for ownership-tracked fields ---
     exec_state: ExecutionState = Field(default_factory=ExecutionState)
