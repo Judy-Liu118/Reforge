@@ -4,10 +4,11 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**An execution-reliability runtime for AI agents.** The retry / stop / accept
-decision is taken out of the model and into an explicit, typed, auditable
-runtime layer — so an agent's execution lifecycle can be governed, replayed,
-and benchmarked like infrastructure, not a chat session.
+**An execution-reliability runtime for AI agents.** The retry decision is
+taken out of the model and into an explicit, typed, auditable runtime layer
+— so when a task fails in a recoverable way, the runtime classifies the
+failure, recalls prior repairs from memory, and retries with a targeted hint
+instead of looping blindly.
 
 ---
 
@@ -20,15 +21,24 @@ inside it.
 ```
 LLM      → generate code / call skill
 Runtime  → execute in sandbox, capture stderr, classify failure
-Governor → decide RETRY / ACCEPT / STOP   (single source of authority)
+Governor → typed classification → targeted retry on recoverable failure,
+           immediate stop on intent-driven or timeout failure
 Memory   → store typed failure mode + repair strategy for next time
 Events   → emit immutable facts to an append-only log
 ```
 
-The consequence: when a task fails in a recoverable way, the runtime — not the
-model's free-form judgement — decides whether to retry with a targeted fix,
-stop with a typed reason, or accept. Every decision is an event on an
-append-only log, so any run can be replayed and audited after the fact.
+The consequence on recoverable failures: each retry attempt is shaped by a
+typed `failure_mode` and a `repair_hint` recalled from memory, rather than a
+naive while-retry on `exit_code != 0`. On task-intent-driven failures
+(`EXPECTED_ERROR` / `TRACEBACK_DEMO`, classified once from the user's
+request by IntentStage — not inferred from runtime execution history) and
+watchdog timeouts the governor issues an immediate STOP instead of burning
+the budget. Outside those two
+paths the governor and a naive baseline retry to the same budget; the
+honest claim is **better recovery quality**, not generic
+unrecoverability recognition (see [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
+Every decision lands on an append-only event log, so any run can be replayed
+and audited after the fact.
 
 ---
 
@@ -52,7 +62,7 @@ sequenceDiagram
     W->>G: classify + decide
     G-->>W: RETRY (failure_mode=column_mismatch)
     W->>S: run regenerated code
-    S-->>W: exit_code=0, stdout="7668.76"
+    S-->>W: exit_code=0, stdout="7668.74"
     W->>E: EXECUTION_SUCCEEDED + TASK_COMPLETED
     W->>M: store RECOVERY with problem_signature
 ```
@@ -88,16 +98,51 @@ products.
 
 | Concern | LLM-as-conductor agents | **Reforge** |
 |---|---|---|
-| Retry / stop decision | Model decides inside the tool loop | **Governor pipeline** (Intent → Capability → Classify → Policy), single authority |
+| Retry decision | Model decides inside the tool loop | **Governor pipeline** (Intent → Capability → Classify → Policy) — typed classification drives a targeted retry hint, not a free-form judgement |
 | Failure classification | Natural language | **Typed enum** `failure_mode` + structured `problem_signature` |
 | Cross-session learning | Each run starts cold | **Memory substrate** — typed records, structural recall (not vector-only) |
 | Auditability | Conversation history | **Append-only event log** + `SessionReplay` reconstruction |
-| Safety | Command approval | **3 layers**: request gate (regex) + AST guard + reflection anti-spoofing |
+| Safety | Command approval | **3 layers**: pre-codegen request gate (regex on user_request) + post-codegen AST guard + retry-integrity check (catches blank `except`, swallowed exception, fake success output) |
 | Sandbox | Host shell / one container | **Pluggable backend** — subprocess (default) or hardened Docker |
 
 ---
 
+## Evaluation methodology
+
+The honest read on whether the runtime layer actually changes outcomes lives
+in `docs/eval/`. The methodology is pre-registered — metrics, paired-delta
+formulas, sentinel rules for missing token usage, and the significance
+decision rule are all locked **before** any real-data run, so post-hoc edits
+to make a number look better are visible as such.
+
+- [`docs/eval/PHASE0_METRICS.md`](docs/eval/PHASE0_METRICS.md) —
+  pre-registration record (v4, signed off). Headline claim narrowed to a
+  single pillar: **governor improves recovery quality on recoverable
+  failures** (recovery rate, attempts on solved, tokens per solved). Tier B
+  metrics (deliberate-STOP precision/recall, false-stop rate) are explicitly
+  deferred because the governor has no history-based unrecoverability
+  detector (see KNOWN_LIMITATIONS L3). Headline claims require the paired
+  95% CI to not cross zero; "consistent with noise" deltas can appear in
+  tables but never in headline copy.
+- [`docs/eval/PHASE0_CORPUS.md`](docs/eval/PHASE0_CORPUS.md) — locked
+  calibration corpus (5 BIRD-simple picks + 4 hand-built toys, including
+  the timeout decoy that probes the deliberate-STOP code path).
+- [`docs/eval/PHASE0_CALIBRATION.md`](docs/eval/PHASE0_CALIBRATION.md) —
+  Phase 0 instrument calibration: **GO** as of 2026-06-26; all four
+  mechanism gates passed (path-swap on bypass, governor pipeline fires,
+  timeout deliberate-STOP reachable, seeds plumb through).
+- Phase 1 BIRD ablation is in progress; the field-of-record for
+  passed/failed is the SQL comparator
+  (`reforge.runtime.sql.comparator`), not the runtime's internal LLM
+  evaluator — see KNOWN_LIMITATIONS L6 for why.
+
+---
+
 ## Benchmark snapshot
+
+> **Early descriptive snapshot — pre-dates the pre-registered eval above.**
+> Kept for transparency; do not read as a headline claim. The pre-registered
+> Phase 1 numbers (when they land) are the load-bearing comparison.
 
 One run of the curated 10-case suite against `deepseek-v4-pro`, no mocks
 (`docs/benchmark_sample.md`). Reported as-is, including the cases where actual
@@ -145,6 +190,13 @@ contaminated +20% to v1's isolated +0% to v2's multi-seed CI. See
 v0 → v1 → v2 progression and the v3 roadmap (fix weak fixtures, add Memory
 Influence Score to disambiguate recall vs used).
 
+> Protocol note: the table above uses `N_seeds = 5` from the v2
+> experience-memory harness. The Phase 1 pre-registration
+> ([`docs/eval/PHASE0_METRICS.md`](docs/eval/PHASE0_METRICS.md) §3) locks
+> the memory-axis ablation at `N_seeds = 3` against a different corpus and
+> harness — different protocol, different evidence base, intentionally not
+> averaged together.
+
 ---
 
 ## Quick start
@@ -186,16 +238,31 @@ under `docs/`:
 
 ## Architecture
 
-`RuntimeState` is **frozen** — no new top-level fields; new state flows through
-`ExecutionEvent` to the append-only log. Four runtime layers each own a
-sub-state and a hard responsibility boundary:
+`RuntimeState` evolves **only through contract tests** — the ban is on
+silent dual-write flat fields that duplicate nested sub-state (enforced by
+`reforge/tests/test_state_no_flat_fields.py`), not on new top-level inputs.
+Adding a true task-level input is permitted when it earns a payload-field
+slot in the contract test's whitelist; `image_inputs: list[str]`
+(declarative visual inputs, see below) is the most recent such addition.
+Four runtime layers each own a sub-state and a hard responsibility boundary:
 
 | Layer | Writes | Owns |
 |---|---|---|
 | Sandbox executor | `exec_state` | stdout / stderr / exit_code |
-| Governor | `control_state` | retry decision (single authority) |
+| Governor | `control_state` | retry decision + policy reason |
 | Reflection + Eval | `semantic_state` | intent, reflection, evaluation signals |
 | Outcome resolver | `outcome_state` | final outcome + answer |
+
+**Vision routing is per-attempt model selection, not a pre-loop graph
+branch.** `code_generation_node` chooses between the text and multimodal
+LLM by `bool(state.image_inputs)` on each attempt; visual inputs are
+declared once by the caller via `RuntimeRunner.run(user_request,
+image_inputs=[...])` and are task-level immutable across the loop (a
+boundary invariant in `RuntimeRunner.stream` raises if any node mutates the
+field). The previous filesystem-scan + visual-intent-regex routing has been
+removed; disambiguation between "user-declared input image" and
+"data task happens to write a PNG into the workspace" is now structural,
+not heuristic.
 
 Subsystem contracts (produces / consumes / must-not) are enforced by contract
 tests. Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
@@ -221,7 +288,7 @@ reforge/
 | Metric | Value |
 |---|---|
 | Tests | green on CI — see badge above |
-| Largest source file | 476 lines (no god-files) |
+| Largest source file | 463 lines (no god-files) |
 | Memory backends | 2 (JSON, SQLite) behind one Protocol |
 | MCP transport | hand-rolled stdio JSON-RPC (no SDK) |
 | Sandbox backends | 2 (subprocess, Docker) behind one Protocol |
