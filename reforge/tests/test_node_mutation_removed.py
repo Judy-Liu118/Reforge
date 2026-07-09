@@ -21,9 +21,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
-from reforge.runtime.bridge.consistency import check_state_consistency
+from reforge.tests._consistency import check_state_consistency
 from reforge.runtime.events.emitters import wrap_retry_decision_node
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.projection import project_state
@@ -212,10 +211,11 @@ class TestConsistencyRegression:
 
     def test_consistency_passes_after_accept(self) -> None:
         log = ExecutionEventLog()
-        node = lambda s: {
-            "retry_decision": {"action": "ACCEPT", "reason": "ok"},
-            "control_state": s.control_state.model_copy(update={"policy_reason": "ok"}),
-        }
+        def node(s):
+            return {
+                "retry_decision": {"action": "ACCEPT", "reason": "ok"},
+                "control_state": s.control_state.model_copy(update={"policy_reason": "ok"}),
+            }
         wrapped = wrap_retry_decision_node(node, log, "s1")
         state = RuntimeState(user_request="t")
         result = wrapped(state)
@@ -227,10 +227,11 @@ class TestConsistencyRegression:
 
     def test_consistency_passes_after_retry(self) -> None:
         log = ExecutionEventLog()
-        node = lambda s: {
-            "retry_decision": {"action": "RETRY", "reason": "fail"},
-            "control_state": s.control_state.model_copy(update={"policy_reason": "fail"}),
-        }
+        def node(s):
+            return {
+                "retry_decision": {"action": "RETRY", "reason": "fail"},
+                "control_state": s.control_state.model_copy(update={"policy_reason": "fail"}),
+            }
         wrapped = wrap_retry_decision_node(node, log, "s1")
         state = RuntimeState(user_request="t")
         result = wrapped(state)

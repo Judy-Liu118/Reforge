@@ -19,9 +19,8 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
 
-from reforge.runtime.bridge.consistency import check_state_consistency
+from reforge.tests._consistency import check_state_consistency
 from reforge.runtime.events.emitters import wrap_retry_decision_node
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.projection import project_state
@@ -82,7 +81,6 @@ class TestPolicyDecisionOverride:
         assert result["control_state"].retry_decision_action == "RETRY"
 
     def test_retry_decision_action_matches_event_payload(self) -> None:
-        log = ExecutionEventLog()
         for action in ("ACCEPT", "STOP", "RETRY"):
             inner_log = ExecutionEventLog()
             wrapped = wrap_retry_decision_node(_decision_node(action), inner_log, "s1")

@@ -12,12 +12,11 @@ Tests cover:
 
 from __future__ import annotations
 
-import io
 
 import pytest
 
 from reforge.cli.progress import format_live_event
-from reforge.runtime.bridge.consistency import check_state_consistency
+from reforge.tests._consistency import check_state_consistency
 from reforge.runtime.events.emitters import wrap_final_response_node
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.models import (

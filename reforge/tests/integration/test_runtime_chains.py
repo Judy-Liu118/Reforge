@@ -12,7 +12,6 @@ from unittest.mock import Mock, patch
 
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
 from reforge.runtime.events.log import ExecutionEventLog
-from reforge.runtime.policy.task_intent import TaskIntent
 
 
 def _patch_llm_nodes(factory):
@@ -132,7 +131,7 @@ def test_expected_failure_chain():
 
 def test_event_log_consistency_clean_success():
     """After clean execution, event log projection must match runtime state."""
-    from reforge.runtime.bridge.consistency import check_state_consistency
+    from reforge.tests._consistency import check_state_consistency
     from reforge.runtime.events.projection import project_state
 
     log = ExecutionEventLog()
@@ -151,7 +150,7 @@ def test_event_log_consistency_clean_success():
 
 def test_event_log_consistency_after_retry():
     """After recovery, event log projection must still match runtime state."""
-    from reforge.runtime.bridge.consistency import check_state_consistency
+    from reforge.tests._consistency import check_state_consistency
     from reforge.runtime.events.projection import project_state
 
     log = ExecutionEventLog()
@@ -292,7 +291,7 @@ def test_memory_assisted_retry_calls_substrate():
     - The full run still completes successfully (memory doesn't break the flow)
     - The final outcome is RECOVERED (error → memory recall → retry → success)
     """
-    from unittest.mock import Mock, patch as _patch
+    from unittest.mock import Mock
 
     class _FakeSubstrate:
         def __init__(self) -> None:

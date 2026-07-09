@@ -363,13 +363,13 @@ bug, and Phase 1 / Phase 2 ship within the narrowed scope above.
 
 ### Symptom
 
-Four constructors / argument signatures carry the same hardcoded
-default for max retries:
+Three constructors / argument signatures carry the same hardcoded
+default for max retries (a fourth, `PolicyEngine`, was an unconsumed
+wrapper and has been deleted):
 
 | Location | Signature |
 |---|---|
 | `reforge/runtime/policy/retry_policy.py:25` (`RetryPolicy.decide()` parameter) | `max_retries: int = 2` |
-| `reforge/runtime/policy/policy_engine.py:21` (`PolicyEngine.__init__`) | `max_retries: int = 2` |
 | `reforge/runtime/orchestration/governor/policy_stage.py:12` (`PolicyStage.__init__`) | `max_retries: int = 2` |
 | `reforge/runtime/orchestration/governor/engine.py:31` (`ExecutionGovernor.__init__`) | `max_retries: int = 2` |
 

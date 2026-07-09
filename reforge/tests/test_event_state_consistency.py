@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from reforge.runtime.bridge.consistency import (
+from reforge.tests._consistency import (
     ConsistencyReport,
     FieldMismatch,
     check_state_consistency,
@@ -26,7 +26,7 @@ from reforge.runtime.events.models import (
     recovery_attempted,
     reflection_generated,
 )
-from reforge.runtime.events.projection import RuntimeStateProjection, project_state
+from reforge.runtime.events.projection import project_state
 from reforge.runtime.domain.state.models import (
     AttemptRecord,
     EvaluationResult,

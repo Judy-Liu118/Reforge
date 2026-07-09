@@ -16,9 +16,8 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
 
-from reforge.runtime.bridge.consistency import check_state_consistency
+from reforge.tests._consistency import check_state_consistency
 from reforge.runtime.events.emitters import wrap_retry_decision_node
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.projection import project_state
@@ -246,7 +245,7 @@ class TestMigrationConsistency:
         log = ExecutionEventLog()
         wrapped_s1 = wrap_retry_decision_node(_retry_node, log, "s1")
         wrapped_s2 = wrap_retry_decision_node(_retry_node, log, "s2")
-        r1 = wrapped_s1(_make_state())
+        wrapped_s1(_make_state())
         wrapped_s2(_make_state())
         wrapped_s2(_make_state(retry_count=1))
         # s1: 1 retry, s2: 2 retries

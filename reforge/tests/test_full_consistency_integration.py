@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 
-from reforge.runtime.bridge.consistency import check_state_consistency
+from reforge.tests._consistency import check_state_consistency
 from reforge.runtime.events.emitters import (
     wrap_evaluation_node,
     wrap_execution_node,
@@ -36,12 +36,9 @@ from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.projection import project_state
 from reforge.runtime.domain.state.models import (
     AttemptRecord,
-    EvaluationResult,
     ExecutionOutput,
     ExecutionState,
-    RuntimeControlState,
     RuntimeState,
-    SemanticState,
 )
 
 

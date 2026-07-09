@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from reforge.runtime.bridge.consistency import check_state_consistency
+from reforge.tests._consistency import check_state_consistency
 from reforge.runtime.events.emitters import wrap_evaluation_node, wrap_reflection_node
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.projection import project_state
@@ -224,7 +224,7 @@ class TestMigrationConsistency:
         from reforge.runtime.domain.state.models import EvaluationResult, ExecutionState
         log = ExecutionEventLog()
         wrapped = wrap_evaluation_node(_eval_node(0.9, True), log, "s1")
-        result = wrapped(RuntimeState())
+        wrapped(RuntimeState())
         state = RuntimeState(
             evaluation_result=EvaluationResult(score=0.9, passed=True),
             exec_state=ExecutionState(exit_code=None),
