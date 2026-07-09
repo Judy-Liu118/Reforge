@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 
-from reforge.cli.case_loader import find_case, list_cases
+from reforge.cli.case_loader import list_cases
 from reforge.cli.events import DEFAULT_EVENT_LOG_PATH
 from reforge.cli.formatter import (
     format_code,
@@ -23,23 +22,13 @@ from reforge.cli.research import is_research_question, run_research
 from reforge.memory.sqlite_substrate import SqliteMemorySubstrate
 from reforge.memory.writer import record_from_final_state
 from reforge.observability.tracing.storage import save_trace
-from reforge.runtime.orchestration.decomposition import AsyncSubtaskRunner, SubtaskRunner, TaskDecomposer
+from reforge.runtime.orchestration.decomposition import TaskDecomposer
 from reforge.runtime.orchestration.decomposition.models import DecompositionResult, SubtaskResult
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
 from reforge.runtime.events.persistent_log import PersistentEventLog
 from reforge.runtime.infrastructure.history.models import SessionRecord
 from reforge.runtime.infrastructure.history.storage import HistoryStorage
 from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore
-
-
-def _eval_trend(attempts: list) -> str:
-    """Format eval score trend across attempts, e.g. '0.40→0.80→1.00'."""
-    scores = [a.eval_score for a in attempts if hasattr(a, "eval_score")]
-    if not scores:
-        return "-"
-    if len(scores) == 1:
-        return f"{scores[0]:.2f}"
-    return "→".join(f"{s:.2f}" for s in scores)
 
 
 def run_multistep_task(

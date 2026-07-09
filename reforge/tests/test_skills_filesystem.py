@@ -13,12 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from reforge.runtime.skills import Skill, SkillContext, SkillRegistry, SkillResult
+from reforge.runtime.skills import Skill, SkillContext, SkillRegistry
 from reforge.runtime.skills.builtin import (
     EditSkill,
     GlobSkill,
     GrepSkill,
-    PythonSandboxSkill,
     ReadSkill,
     default_skill_registry,
 )

@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from reforge.runtime.eda.models import EdaReport, EdaStageResult
+from reforge.runtime.eda.models import EdaReport
 from reforge.runtime.eda.stages import DEFAULT_STAGES
 
 _STATUS_LABEL = {

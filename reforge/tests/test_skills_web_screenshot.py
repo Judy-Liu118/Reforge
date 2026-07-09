@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from reforge.runtime.skills import Skill, SkillContext, SkillResult
+from reforge.runtime.skills import Skill, SkillContext
 from reforge.runtime.skills.builtin import default_skill_registry
 from reforge.runtime.skills.builtin.web_screenshot import (
     WebScreenshotError,

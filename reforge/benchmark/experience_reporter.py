@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from reforge.benchmark.experience_driver import (
     ExperienceReport,
-    PairResult,
     pair_passed,
 )
 from reforge.benchmark.models import BenchmarkRun

@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
-from reforge.runtime.infrastructure.trajectory.models import AttemptStep, TrajectoryRecord
+from reforge.runtime.infrastructure.trajectory.models import TrajectoryRecord
 from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore
 
 

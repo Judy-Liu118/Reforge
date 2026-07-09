@@ -14,7 +14,6 @@ import — no static-file serving fragility.
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import threading
 from http.server import BaseHTTPRequestHandler

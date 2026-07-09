@@ -24,7 +24,6 @@ from reforge.runtime.agents.capability import (
 from reforge.runtime.agents.synthesizer import DefaultSynthesizer
 from reforge.runtime.agents.verifier import RunnerVerifier
 from reforge.runtime.skills import SkillContext, SkillRegistry, SkillResult
-from reforge.runtime.skills.protocol import Skill
 
 
 # ---------------------------------------------------------------------------

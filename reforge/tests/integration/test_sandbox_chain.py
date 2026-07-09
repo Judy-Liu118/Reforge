@@ -1,6 +1,5 @@
 """Real sandbox integration tests — actual subprocess execution, not mock."""
 
-from reforge.runtime.orchestration.engine.runner import RuntimeRunner
 from reforge.runtime.infrastructure.execution.sandbox import SandboxExecutor
 
 

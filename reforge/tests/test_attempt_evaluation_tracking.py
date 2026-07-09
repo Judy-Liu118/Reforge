@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from reforge.runtime.domain.state.models import (
     AttemptRecord,
-    EvalCheck,
-    EvaluationResult,
     ExecutionState,
     RuntimeState,
 )
@@ -115,13 +111,13 @@ def test_evaluation_node_no_attempts_does_not_crash() -> None:
 # --- _eval_trend helper ---
 
 def test_eval_trend_single_attempt() -> None:
-    from reforge.cli.main import _eval_trend
+    from reforge.cli.commands.history import _eval_trend
     attempts = [AttemptRecord(attempt=0, eval_score=0.9)]
     assert _eval_trend(attempts) == "0.90"
 
 
 def test_eval_trend_multiple_attempts() -> None:
-    from reforge.cli.main import _eval_trend
+    from reforge.cli.commands.history import _eval_trend
     attempts = [
         AttemptRecord(attempt=0, eval_score=0.4),
         AttemptRecord(attempt=1, eval_score=0.7),
@@ -131,5 +127,5 @@ def test_eval_trend_multiple_attempts() -> None:
 
 
 def test_eval_trend_empty_attempts() -> None:
-    from reforge.cli.main import _eval_trend
+    from reforge.cli.commands.history import _eval_trend
     assert _eval_trend([]) == "-"

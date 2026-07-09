@@ -1,7 +1,7 @@
 """Unit tests for LLMClient retry/backoff and hook emission."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError

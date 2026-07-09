@@ -18,7 +18,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
 
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
 from reforge.runtime.events.log import ExecutionEventLog

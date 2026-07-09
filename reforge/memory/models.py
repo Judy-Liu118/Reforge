@@ -7,7 +7,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from reforge.memory.fingerprint import FailureFingerprint, extract_fingerprint
+from reforge.memory.fingerprint import extract_fingerprint
 
 
 class MemoryType(str, Enum):

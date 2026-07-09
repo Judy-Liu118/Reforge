@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reforge.memory.fingerprint import FailureFingerprint, extract_fingerprint
+from reforge.memory.fingerprint import extract_fingerprint
 from reforge.memory.models import MemoryRecord
 from reforge.memory.retrieval import MemoryRetriever
 from reforge.memory.store import MemoryStore
@@ -344,9 +344,9 @@ class TestExecutionMemoryScoringWithFingerprint:
             traceback=_TB_KEY,
         )
         records = [
-            ExecutionRecord.model_validate_json(l)
-            for l in (tmp_path / "exec.jsonl").read_text().splitlines()
-            if l.strip()
+            ExecutionRecord.model_validate_json(ln)
+            for ln in (tmp_path / "exec.jsonl").read_text().splitlines()
+            if ln.strip()
         ]
         assert len(records) == 1
         sig = records[0].problem_signature

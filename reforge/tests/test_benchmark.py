@@ -199,7 +199,6 @@ class TestBenchmarkRunnerSingleCase:
 
     def test_memory_recall_counter(self) -> None:
         """The counting substrate proxy must increment when recall() is called."""
-        from reforge.memory.substrate import CompositeMemorySubstrate
 
         recall_calls: list[str] = []
 
@@ -212,7 +211,7 @@ class TestBenchmarkRunnerSingleCase:
                 pass
 
         state = _fake_state()
-        runner = BenchmarkRunner(
+        BenchmarkRunner(
             runner_factory=lambda: FakeRunner(state),
             substrate_factory=lambda: StubInner(),
         )

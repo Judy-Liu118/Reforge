@@ -148,7 +148,7 @@ class HpoSession:
                 idx = futures[fut]
                 try:
                     results[idx] = fut.result()
-                except Exception as exc:  # pragma: no cover — defensive
+                except Exception:  # pragma: no cover — defensive
                     logger.exception("HpoSession worker crashed on case index %d", idx)
                     case = cases[idx]
                     results[idx] = HpoRun(

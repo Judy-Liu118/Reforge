@@ -25,13 +25,8 @@ import pytest
 
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.models import (
-    evaluation_completed,
-    execution_failed,
     execution_started,
     execution_succeeded,
-    policy_decided,
-    recovery_attempted,
-    reflection_generated,
     task_completed,
 )
 from reforge.runtime.events.observer import EventLogObserver
@@ -83,7 +78,6 @@ class TestServerLifecycle:
             url = obs.base_url + "/api/events"
             _get(url)  # works inside context
         # After __exit__ the server is gone; connection must fail
-        import socket
         with pytest.raises(Exception):
             urllib.request.urlopen(url, timeout=1)
 

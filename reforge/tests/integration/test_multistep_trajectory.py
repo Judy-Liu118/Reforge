@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from reforge.runtime.infrastructure.trajectory.models import MultiStepTrajectory
 from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore

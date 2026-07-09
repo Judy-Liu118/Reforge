@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from reforge.runtime.orchestration.evaluation.feedback import _CHECK_TO_INSTRUCTION, format_eval_feedback
 from reforge.runtime.domain.state.models import EvalCheck, EvaluationResult

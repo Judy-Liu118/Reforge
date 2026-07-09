@@ -23,7 +23,6 @@ from reforge.benchmark.experience_multiseed import (
     MultiSeedDriver,
     MultiSeedReport,
     PairMultiSeed,
-    StatSummary,
     summarise,
 )
 from reforge.benchmark.experience_multiseed_reporter import (

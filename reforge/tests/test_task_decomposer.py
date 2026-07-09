@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from reforge.runtime.orchestration.decomposition.decomposer import TaskDecomposer, _has_multistep_signals, _parse_response
-from reforge.runtime.orchestration.decomposition.models import DecompositionResult
 
 
 # --- Heuristic signal tests ---

@@ -19,7 +19,6 @@ import pytest
 
 from reforge.benchmark.experience_cases import (
     PAIRED_CASES,
-    PairedCase,
     all_cases,
     pair_by_id,
 )
@@ -330,7 +329,6 @@ class TestProjectDirIsolation:
         pair = PAIRED_CASES[0]
         driver = ExperienceDriver(runner_factory=WatchingRunner)
         driver.run_pair(pair, tmp_path)
-        after = os.environ.get("REFORGE_PROJECT_DIR")
 
         # Four legs observed four distinct project dirs (warm A & A' share)
         assert len(observed) == 4

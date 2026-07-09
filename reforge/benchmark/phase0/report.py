@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from reforge.benchmark.phase0.corpus import (
-    BIRD_CASE_IDS,
     BIRD_RECOVERABILITY_GATE_IDS,
     D1_TIMEOUT,
     T1_SALES,

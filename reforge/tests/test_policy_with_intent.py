@@ -1,13 +1,11 @@
-"""Integration test: PolicyEngine with TaskIntent — verifies STOP/RETRY/ACCEPT behavior."""
+"""Integration test: RetryPolicy with TaskIntent — verifies STOP/RETRY/ACCEPT behavior."""
 
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
 
 from reforge.runtime.classification.classifier import FailureClassifier
 from reforge.runtime.policy.retry_policy import RetryPolicy
 from reforge.runtime.domain.state.models import (
-    EvaluationResult,
     ExecutionOutput,
     RuntimeDecisionAction,
 )

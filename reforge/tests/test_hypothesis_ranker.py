@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from reforge.runtime.research.models import HypothesisRecord
-from reforge.runtime.research.ranker import HypothesisRanker, _score, _words_from
+from reforge.runtime.research.ranker import HypothesisRanker, _score
 
 
 def _hyp(hypothesis: str, rationale: str = "") -> HypothesisRecord:

@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from reforge.runtime.skills import Skill, SkillContext, SkillResult
+from reforge.runtime.skills import Skill, SkillContext
 from reforge.runtime.skills.builtin import default_skill_registry
 from reforge.runtime.skills.builtin.vision import (
     VisionDescribeSkill,

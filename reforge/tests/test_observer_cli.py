@@ -24,16 +24,13 @@ from unittest.mock import patch
 import pytest
 
 from reforge.cli.events import (
-    DEFAULT_EVENT_LOG_PATH,
     _EVENT_KINDS,
     handle_serve,
 )
 from reforge.cli.main import main
 from reforge.runtime.events.models import (
-    execution_failed,
     execution_started,
     execution_succeeded,
-    policy_decided,
     task_completed,
 )
 from reforge.runtime.events.persistent_log import PersistentEventLog
@@ -114,7 +111,6 @@ class TestHandleServeLifecycle:
         t.join(timeout=5)
 
         # Server must now be down
-        import socket
         with pytest.raises(Exception):
             urllib.request.urlopen(url + "/api/events", timeout=1)
 

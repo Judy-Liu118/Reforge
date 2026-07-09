@@ -80,7 +80,7 @@ class TestBasicPersistence:
         log.append(_started())
         log.append(_succeeded())
         log.append(_failed())
-        lines = [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        lines = [ln for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
         assert len(lines) == 3
 
     def test_each_line_is_valid_json(self, tmp_path: Path) -> None:
@@ -318,7 +318,7 @@ class TestThreadSafety:
             t.join()
 
         assert len(log) == n
-        lines = [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        lines = [ln for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
         assert len(lines) == n
 
 

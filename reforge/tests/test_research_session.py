@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from reforge.runtime.research.aggregator import EvidenceAggregator
 from reforge.runtime.research.models import HypothesisRecord, ResearchPlan
 from reforge.runtime.research.planner import ResearchPlanner
 from reforge.runtime.research.session import ResearchSession

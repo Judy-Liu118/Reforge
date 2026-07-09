@@ -41,7 +41,7 @@ class TestPlannerSubstrateInjection:
         result = planner_node(state, substrate=substrate)
 
         substrate.recall_for_planning.assert_called_once()
-        assert result["generated_code"] == "1. Plan"
+        assert result["semantic_state"].plan == "1. Plan"
 
 
 class TestReflectionSubstrateInjection:

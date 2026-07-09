@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
-from reforge.memory.execution_memory import ExecutionMemory, ExecutionRecord
+from reforge.memory.execution_memory import ExecutionMemory
 
 
 def _mem(tmp_path: Path) -> ExecutionMemory:

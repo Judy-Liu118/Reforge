@@ -8,7 +8,6 @@ from reforge.memory.retrieval import MemoryRetriever, format_memory_results
 from reforge.observability.tracing.renderer import render_timeline
 from reforge.runtime.infrastructure.history.replay import format_replay
 from reforge.runtime.infrastructure.history.storage import HistoryStorage
-from reforge.runtime.domain.state.models import AttemptRecord
 
 
 def _eval_trend(attempts: list) -> str:

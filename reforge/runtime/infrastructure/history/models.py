@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from reforge.runtime.domain.state.models import AttemptRecord
+
+if TYPE_CHECKING:
+    from reforge.runtime.domain.state.models import RuntimeState
 
 
 class SessionRecord(BaseModel):
@@ -24,7 +28,7 @@ class SessionRecord(BaseModel):
     @classmethod
     def from_state(
         cls,
-        state: "RuntimeState",  # type: ignore[name-defined]
+        state: "RuntimeState",
         session_id: str,
     ) -> "SessionRecord":
         total_dur = sum(a.duration_ms for a in state.attempts)

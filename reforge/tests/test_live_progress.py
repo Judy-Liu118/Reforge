@@ -16,7 +16,6 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-import pytest
 
 from reforge.cli.progress import ProgressPrinter, format_live_event
 from reforge.runtime.events.log import ExecutionEventLog
@@ -273,7 +272,7 @@ class TestProgressPrinter:
         log.append(execution_started("s1", "a"))
         log.append(execution_succeeded("s1", "a"))
         printer.stop()
-        lines = [l for l in buf.getvalue().splitlines() if l.strip()]
+        lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
         assert len(lines) == 2
 
 
@@ -303,5 +302,5 @@ class TestPersistentLogIntegration:
         printer.stop()
         # Only the new event should appear, not the reconstructed one
         assert "✓" in buf.getvalue()
-        lines = [l for l in buf.getvalue().splitlines() if l.strip()]
+        lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
         assert len(lines) == 1

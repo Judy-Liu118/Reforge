@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reforge.runtime.research.models import HypothesisRecord, ResearchResult
+from reforge.runtime.research.models import ResearchResult
 
 _STATUS_ICON = {
     "confirmed": "✓",
@@ -28,8 +28,8 @@ class ResearchReporter:
     def _header(self, result: ResearchResult) -> str:
         ts = result.timestamp[:10] if result.timestamp else "unknown"
         lines = [
-            f"# Research Report",
-            f"",
+            "# Research Report",
+            "",
             f"**Question:** {result.question}",
             f"**ID:** `{result.research_id}`  |  **Date:** {ts}",
         ]
@@ -43,8 +43,8 @@ class ResearchReporter:
         lines = [
             "## Summary",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Total rounds | {result.total_rounds} |",
             f"| Hypotheses tested | {total} |",
             f"| Confirmed | {confirmed} |",

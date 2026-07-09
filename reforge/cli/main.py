@@ -27,7 +27,6 @@ import re
 import sys
 import uuid
 
-from reforge.cli.commands.history import _eval_trend  # re-exported for test compat
 from reforge.cli.commands.history import handle_history, handle_memory, handle_replay, handle_trace
 from reforge.cli.commands.memory import handle_memory_list, handle_memory_show, handle_memory_stats
 from reforge.cli.commands.run import handle_list, run_task

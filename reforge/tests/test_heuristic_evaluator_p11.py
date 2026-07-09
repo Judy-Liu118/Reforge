@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-import pytest
 
 from reforge.runtime.orchestration.evaluation.heuristics import HeuristicEvaluator
 from reforge.runtime.domain.state.models import (
@@ -439,8 +438,7 @@ def test_artifact_check_fails_when_file_is_stale_from_prior_attempt(tmp_path) ->
         user_request="Read orders.csv and save the report to report.md",
     )
     # Pin "now" so the freshness window is deterministic
-    now_fn = lambda: time.time()
-    er = HeuristicEvaluator(workspace=tmp_path, now_fn=now_fn).evaluate(state)
+    er = HeuristicEvaluator(workspace=tmp_path, now_fn=time.time).evaluate(state)
     assert _has_failed(er, "output_artifact_exists")
     failed = next(c for c in er.checks if c.name == "output_artifact_exists")
     assert "stale" in failed.detail.lower()

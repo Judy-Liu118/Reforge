@@ -20,7 +20,7 @@ their own capability — that would defeat the point.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 

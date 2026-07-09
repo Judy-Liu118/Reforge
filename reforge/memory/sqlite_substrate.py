@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from reforge.memory.models import MemoryRecord, MemoryType
+from reforge.memory.models import MemoryRecord
 from reforge.paths import memory_db_path
 
 _DEFAULT_DB = memory_db_path()

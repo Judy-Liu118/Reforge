@@ -9,7 +9,6 @@ takes one line via `discover_and_register()`.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path

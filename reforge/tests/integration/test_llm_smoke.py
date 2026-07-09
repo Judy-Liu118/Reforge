@@ -35,7 +35,6 @@ def test_llm_client_real_call():
 @skip_unless_smoke
 def test_llm_client_hook_fires_on_real_call():
     """Verify hook events are emitted during a real API call."""
-    import reforge.models.adapters.llm_client as _mod
     from reforge.models.adapters.llm_client import LLMClient, set_hook
 
     events: list[tuple[str, dict]] = []

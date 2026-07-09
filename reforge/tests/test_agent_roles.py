@@ -15,7 +15,7 @@ from reforge.runtime.agents import (
     VerifierAgent,
 )
 from reforge.runtime.research.aggregator import EvidenceAggregator
-from reforge.runtime.research.models import HypothesisRecord, ResearchPlan
+from reforge.runtime.research.models import HypothesisRecord
 from reforge.runtime.research.planner import ResearchPlanner
 from reforge.runtime.domain.state.models import ExecutionOutput, RuntimeState
 

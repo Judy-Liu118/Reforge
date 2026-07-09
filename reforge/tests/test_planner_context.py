@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import pytest
 
 from reforge.memory.models import MemoryRecord, MemoryType
 from reforge.memory.store import MemoryStore

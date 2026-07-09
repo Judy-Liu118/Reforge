@@ -11,10 +11,7 @@ injected into N's request before execution so the LLM has the necessary data.
 from __future__ import annotations
 
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-logger = logging.getLogger(__name__)
 
 from reforge.runtime.orchestration.decomposition.models import (
     DecompositionResult,
@@ -26,6 +23,8 @@ from reforge.runtime.orchestration.decomposition.models import (
 from reforge.memory.substrate import MemorySubstrate
 from reforge.runtime.orchestration.decomposition.runner import SubtaskRunner
 from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore
+
+logger = logging.getLogger(__name__)
 
 _MAX_CONTEXT_CHARS = 400  # Truncate injected context to avoid prompt bloat
 

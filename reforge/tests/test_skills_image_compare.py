@@ -8,13 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from reforge.runtime.skills import Skill, SkillContext, SkillResult
+from reforge.runtime.skills import Skill, SkillContext
 from reforge.runtime.skills.builtin import default_skill_registry
 from reforge.runtime.skills.builtin.image_compare import (
-    CompareImagesError,
     CompareImagesSkill,
     _parse_score,
-    _resolve_image_url,
     compare_images,
 )
 
@@ -192,7 +190,6 @@ class TestDownscale:
         )
         sent_url = client.calls[0]["messages"][0]["content"][1]["image_url"]["url"]
         # Decode the b64 payload and verify the image is now <= max width.
-        import base64
         from PIL import Image as PILImage
         b64 = sent_url.split(",", 1)[1]
         data = base64.b64decode(b64)
@@ -209,7 +206,6 @@ class TestDownscale:
             _ctx(tmp_path),
         )
         sent_url = client.calls[0]["messages"][0]["content"][1]["image_url"]["url"]
-        import base64
         b64 = sent_url.split(",", 1)[1]
         # Round-trip equals the original bytes — no shrink applied.
         assert base64.b64decode(b64) == _png_bytes()

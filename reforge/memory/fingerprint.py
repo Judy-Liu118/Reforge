@@ -93,7 +93,7 @@ def extract_fingerprint(traceback: str, error_type: str = "") -> FailureFingerpr
 
 def _last_error_line(traceback: str) -> str:
     """Return the last line that looks like a Python error."""
-    lines = [l.strip() for l in traceback.strip().splitlines() if l.strip()]
+    lines = [ln.strip() for ln in traceback.strip().splitlines() if ln.strip()]
     for line in reversed(lines):
         if re.match(r"[A-Za-z][A-Za-z0-9_.]*(?:Error|Exception|Warning)\s*:", line):
             return line

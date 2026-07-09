@@ -6,7 +6,6 @@ from contextlib import ExitStack
 from unittest.mock import Mock, patch
 
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
-from reforge.runtime.domain.state.models import RuntimeState
 
 _INTENT_MOCK = Mock()
 _INTENT_MOCK.chat = Mock(return_value="NORMAL_EXECUTION")

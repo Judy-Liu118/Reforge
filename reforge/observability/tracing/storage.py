@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from reforge.observability.tracing.collector import TraceCollector
-from reforge.observability.tracing.models import TraceEvent
 from reforge.paths import runs_dir
 
 _RUNS_DIR = runs_dir()

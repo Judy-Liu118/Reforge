@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from reforge.memory.sqlite_substrate import SqliteMemorySubstrate
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
@@ -79,7 +78,6 @@ def test_two_tasks_share_conversation_id(tmp_path: Path) -> None:
 def test_memory_write_uses_conversation_id(tmp_path: Path) -> None:
     """Memory records written by the runner carry conversation_id as session_id."""
     from reforge.memory.models import MemoryRecord
-    from reforge.memory.writer import record_from_final_state
 
     conv_id = "conv-xyz"
     substrate = SqliteMemorySubstrate(db_path=tmp_path / "c.db")

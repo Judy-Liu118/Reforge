@@ -15,7 +15,6 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-import pytest
 
 from reforge.runtime.events.log import ExecutionEventLog, SubscriptionHandle
 from reforge.runtime.events.models import (
@@ -152,7 +151,7 @@ class TestSubscriptionHandle:
         received_a: list = []
         received_b: list = []
         handle_a = log.subscribe(received_a.append)
-        handle_b = log.subscribe(received_b.append)
+        log.subscribe(received_b.append)
         log.append(_started())
         handle_a.cancel()
         log.append(_started())  # only b receives this
@@ -235,7 +234,7 @@ class TestPersistentLogSubscribers:
         disk_had_event: list[bool] = []
 
         def check_disk(event: object) -> None:
-            lines = [l for l in p.read_text().splitlines() if l.strip()]
+            lines = [ln for ln in p.read_text().splitlines() if ln.strip()]
             disk_had_event.append(len(lines) >= 1)
 
         log.subscribe(check_disk)

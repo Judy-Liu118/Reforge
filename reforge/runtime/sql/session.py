@@ -17,7 +17,6 @@ import logging
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
 from reforge.memory.substrate import CompositeMemorySubstrate, MemorySubstrate
 from reforge.runtime.sql.comparator import compare_results, run_sql

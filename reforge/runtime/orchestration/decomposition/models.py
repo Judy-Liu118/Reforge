@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from reforge.runtime.domain.state.models import RuntimeState
+    pass
 
 
 class SubtaskPlan(BaseModel):
@@ -100,7 +100,6 @@ class MultiStepResult(BaseModel):
         results: list[SubtaskResult],
     ) -> "MultiStepResult":
         total_ms = sum(r.duration_ms for r in results)
-        answers = [r.final_answer for r in results if r.final_answer]
         final = "\n\n".join(
             f"[Step {r.subtask.index + 1}] {r.final_answer}" for r in results if r.final_answer
         )

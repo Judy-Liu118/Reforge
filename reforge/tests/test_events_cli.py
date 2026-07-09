@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from reforge.cli.events import (
     DEFAULT_EVENT_LOG_PATH,

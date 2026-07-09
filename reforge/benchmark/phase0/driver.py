@@ -32,7 +32,6 @@ from typing import Iterator
 
 from reforge.benchmark.phase0.corpus import (
     BIRD_CASE_IDS,
-    BIRD_RECOVERABILITY_GATE_IDS,
     TOY_CASES,
     ToyCase,
 )

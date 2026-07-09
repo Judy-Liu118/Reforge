@@ -122,12 +122,12 @@ def handle_memory_stats() -> None:
     by_type: dict[str, int] = data["by_type"]  # type: ignore[assignment]
     top_errors: list[tuple[str, int]] = data["top_errors"]  # type: ignore[assignment]
 
-    print(f"\n  Memory Statistics")
+    print("\n  Memory Statistics")
     print(f"  Source: {describe_global()}")
     print(f"  {_SEP}")
     print(f"  {'Total Records':<22} {total}")
     print()
-    print(f"  By Type:")
+    print("  By Type:")
     if by_type:
         for t, cnt in by_type.items():
             print(f"    {t:<24} {cnt}")
@@ -136,13 +136,13 @@ def handle_memory_stats() -> None:
 
     if top_errors:
         print()
-        print(f"  Top Error Types:")
+        print("  Top Error Types:")
         for err, cnt in top_errors:
             print(f"    {err:<30} {cnt}")
 
     if recent:
         print()
-        print(f"  Recent Records:")
+        print("  Recent Records:")
         for rec in recent:
             mtype = _fmt_type(rec.memory_type)
             ts = rec.timestamp[:19] if rec.timestamp else "-"

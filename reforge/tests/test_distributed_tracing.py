@@ -17,7 +17,7 @@ from reforge.observability.tracing.agent_span import AgentSpan
 from reforge.observability.tracing.collector import TraceCollector
 from reforge.observability.tracing.models import EventType
 from reforge.observability.tracing.span_context import SpanContext
-from reforge.observability.tracing.tree import TraceNode, TraceTree, render_trace_tree
+from reforge.observability.tracing.tree import TraceTree, render_trace_tree
 from reforge.runtime.agents.identity import ActorContext
 
 
@@ -371,7 +371,6 @@ class TestEndToEnd:
         """Root span (orchestrator) → child spans (one per verifier call)."""
         from unittest.mock import MagicMock
 
-        from reforge.runtime.agents.multi_agent import build_bus_research_session
         from reforge.runtime.agents.role import SynthesisResult
         from reforge.runtime.research.models import HypothesisRecord, ResearchPlan
 
@@ -404,7 +403,7 @@ class TestEndToEnd:
 
         # Wire bus manually to inject SpanContext
         from reforge.runtime.agents.bus import MessageBus
-        from reforge.runtime.agents.bus_verifier import BusVerifier, make_verifier_handler
+        from reforge.runtime.agents.bus_verifier import BusVerifier
         from reforge.runtime.agents.identity import ActorContext
         from reforge.runtime.agents.voter import VerifierVoter
         from reforge.runtime.research.models import HypothesisRecord as HR

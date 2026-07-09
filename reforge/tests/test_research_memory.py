@@ -135,7 +135,6 @@ class TestResearchPlannerWithMemory:
 
     def test_planner_no_memory_no_injection(self) -> None:
         from unittest.mock import MagicMock
-        import json
         from reforge.runtime.research.planner import ResearchPlanner
 
         mock_llm = MagicMock()
