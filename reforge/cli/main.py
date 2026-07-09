@@ -37,6 +37,7 @@ from reforge.cli.events import (
     handle_events_summary,
     handle_serve,
 )
+from reforge.cli.mascot import MASCOT_LINES
 from reforge.cli.research import export_research, handle_research_history
 
 # ---------------------------------------------------------------------------
@@ -57,98 +58,6 @@ def _rpad(s: str, w: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Pixel-art mascot — chibi runtime spirit, blue/orange split.
-# Half-block technique: each char = 2 vertical pixels (▄/▀).
-# Source canvas 28 cols × 26 rows; padded to 32 visual cols. None = transparent.
-# ---------------------------------------------------------------------------
-_PB, _PBL = 27, 33      # semantic blue (base / light)
-_PO, _POD = 208, 202    # forge orange (base / deep)
-_PW       = 231         # white crown / chassis
-_PN       = 236         # dark navy (cog centre, panel, boot band)
-_PG, _PGD = 245, 240    # gray ear-cups / chassis trim
-
-
-def _mc(content: list) -> list:
-    """Center *content* in a 28-col mascot canvas, then pad with 2 transparent
-    cols on each side to reach the 32-col banner width. ``0`` entries inside
-    *content* are also treated as transparent (gaps inside the silhouette)."""
-    pad = 28 - len(content)
-    left = pad // 2
-    right = pad - left
-    body = [None] * left + [c if c else None for c in content] + [None] * right
-    return [None] * 2 + body + [None] * 2
-
-
-def _me() -> list:
-    return [None] * 32
-
-
-_CAT_PIXELS: list[list] = [
-    _me(),
-    _me(),
-    # crown
-    _mc([_PB, _PW, _PW, _PW, _PW, _PW, _PW, _PO]),
-    _mc([_PB, _PB, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PO, _PO]),
-    _mc([_PW, _PB, _PB, _PB, _PB, _PB, _PB, _PO, _PO, _PO, _PO, _PO, _PO, _PW]),
-    # face: blue semantic-graph half | orange cog half
-    _mc([_PB, _PB, _PB, _PB, _PB, _PB, _PB, _PB,  _PO, _PO, _PW, _PW, _PW, _PW, _PO, _PO]),
-    _mc([_PB, _PB, _PW, _PW, _PB, _PB, _PB, _PB,  _PO, _PW, _PW, _PN, _PN, _PW, _PW, _PO]),
-    _mc([_PG] + [_PB, _PB, _PB, _PW, _PB, _PB, _PB, _PB,  _PW, _PW, _PN, _PN, _PN, _PN, _PW, _PW] + [_PG]),
-    _mc([_PG] + [_PB, _PW, _PW, _PW, _PW, _PW, _PB, _PB,  _PW, _PW, _PN, _PN, _PN, _PN, _PW, _PW] + [_PG]),
-    _mc([_PG] + [_PB, _PW, _PB, _PB, _PB, _PW, _PB, _PB,  _PO, _PW, _PW, _PN, _PN, _PW, _PW, _PO] + [_PG]),
-    _mc([_PG] + [_PB, _PW, _PW, _PB, _PW, _PW, _PB, _PB,  _PO, _PO, _PW, _PW, _PW, _PW, _PO, _PO] + [_PG]),
-    # lower head taper
-    _mc([_PB, _PB, _PB, _PB, _PB, _PB, _PB, _PB,  _PO, _PO, _PO, _PO, _PO, _PO, _PO, _PO]),
-    _mc([_PB, _PB, _PB, _PB, _PB, _PB, _PB,  _PO, _PO, _PO, _PO, _PO, _PO, _PO]),
-    _mc([_PB, _PB, _PB, _PB, _PB, _PB,  _PO, _PO, _PO, _PO, _PO, _PO]),
-    _mc([_PB, _PB, _PB, _PB, _PB,  _PO, _PO, _PO, _PO, _PO]),
-    _mc([_PB, _PB, _PB, _PB,  _PO, _PO, _PO, _PO]),
-    _mc([_PB, _PB, _PB,  _PO, _PO, _PO]),
-    # shoulders
-    _mc([0, 0, 0, 0, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, 0, 0, 0, 0]),
-    # arms: gray stub from chassis out to a blue / orange mitt (2 rows tall)
-    _mc([0, _PBL, _PGD, _PGD, _PW, _PN, _PN, _PN, _PN, _PN, _PN, _PN, _PN, _PW, _PGD, _PGD, _POD, 0]),
-    _mc([0, _PBL, _PGD, _PGD, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PGD, _PGD, _POD, 0]),
-    # lower chest + hips
-    _mc([0, 0, 0, 0, _PGD, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PW, _PGD, 0, 0, 0, 0]),
-    _mc([0, 0, 0, 0, 0, _PGD, _PW, _PW, _PW, _PW, _PW, _PW, _PGD, 0, 0, 0, 0, 0]),
-    # striped boots
-    _mc([0, 0, 0, 0, 0, _PW, _PW, _PW, 0, 0, _PW, _PW, _PW, 0, 0, 0, 0, 0]),
-    _mc([0, 0, 0, 0, 0, _PN, _PN, _PN, 0, 0, _PN, _PN, _PN, 0, 0, 0, 0, 0]),
-    _mc([0, 0, 0, 0, 0, _PW, _PW, _PW, 0, 0, _PW, _PW, _PW, 0, 0, 0, 0, 0]),
-    _me(),
-]
-
-
-def _half_line(top: list, bot: list) -> str:
-    """Pair two pixel rows → one terminal line via ▄ half-block characters."""
-    out = ""
-    for t, b in zip(top, bot):
-        if t is None and b is None:
-            out += " "
-        elif t is None:
-            out += f"\033[38;5;{b}m▄\033[0m"
-        elif b is None:
-            out += f"\033[38;5;{t}m▀\033[0m"
-        else:
-            out += f"\033[38;5;{b};48;5;{t}m▄\033[0m"
-    return out
-
-
-def _build_cat() -> list[str]:
-    rows = _CAT_PIXELS
-    lines = []
-    for i in range(0, len(rows), 2):
-        top = rows[i]
-        bot = rows[i + 1] if i + 1 < len(rows) else [None] * len(top)
-        lines.append(_half_line(top, bot))
-    return lines
-
-
-_PIXEL_CAT: list[str] = _build_cat()
-_CAT_VW = 32  # visual width: 32 chars (1 per pixel, half-block packs 2 rows)
-
-# ---------------------------------------------------------------------------
 # Banner colors
 # ---------------------------------------------------------------------------
 _BOX_C = "\033[94m"       # bright blue box border
@@ -156,9 +65,9 @@ _TITLE = "\033[1;97m"     # bold white title
 _DIM_C = "\033[38;5;243m" # muted gray labels
 _ACC_C = "\033[36m"       # cyan accent
 
-# Box inner = 1(margin) + 32(cat) + 2(gap) + 25(text) = 60
-_BW = 60
-_RIGHT_W = 25
+# Box inner: 1 (left margin) + 28 (mascot) + 2 (gap) + 35 (text) = 66
+_BW = 66
+_RIGHT_W = 35
 
 
 def _banner(session_id: str) -> str:
@@ -169,8 +78,8 @@ def _banner(session_id: str) -> str:
         model = ""
 
     cwd = os.getcwd()
-    if len(cwd) > 24:
-        cwd = "…" + cwd[-23:]
+    if len(cwd) > 25:
+        cwd = "…" + cwd[-24:]
 
     B, R = _BOX_C, _RST
     top    = f"{B}╭{'─' * _BW}╮{R}"
@@ -179,26 +88,26 @@ def _banner(session_id: str) -> str:
     right_col = [
         f"  {_TITLE}R E F O R G E{R}",
         "",
-        f"  AI Runtime Console",
-        f"  {_DIM_C}model{R} · {model[:15]}",
-        f"  {_DIM_C}dir{R}   · {cwd[:17]}",
+        "  AI Runtime Console",
+        f"  {_DIM_C}model{R} · {model[:25]}",
+        f"  {_DIM_C}dir{R}   · {cwd}",
         f"  {_DIM_C}sess{R}  · {session_id}",
         "",
         f"  {_ACC_C}task · exit{R}",
     ]
 
-    def row(cat: str = "", rhs: str = "") -> str:
-        # left: 1 space + cat (32 vis) + 2 gap = 35 vis
-        left = (" " + cat + "  ") if cat else " " * 35
-        # right: pad to _RIGHT_W (25) vis
+    def row(mascot: str = "", rhs: str = "") -> str:
+        # left: 1 space + mascot (28 vis) + 2 gap = 31 vis
+        left = (" " + mascot + "  ") if mascot else " " * 31
+        # right: pad to _RIGHT_W (35) vis
         right_padded = _rpad(rhs, _RIGHT_W)
         return f"{B}│{R}{left}{right_padded}{B}│{R}"
 
     lines: list[str] = [top, row()]
-    for i, cat_row in enumerate(_PIXEL_CAT):
+    for i, mascot_row in enumerate(MASCOT_LINES):
         rhs = right_col[i] if i < len(right_col) else ""
-        lines.append(row(cat_row, rhs))
-    for j in range(len(_PIXEL_CAT), len(right_col)):
+        lines.append(row(mascot_row, rhs))
+    for j in range(len(MASCOT_LINES), len(right_col)):
         lines.append(row("", right_col[j]))
     lines += [row(), bottom]
     return "\n".join(lines)
