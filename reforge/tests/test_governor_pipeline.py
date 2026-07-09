@@ -146,3 +146,54 @@ class TestGovernorPipeline:
 
         assert r.repair_hint == "check the CSV path is relative to cwd"
         assert r.reason != r.repair_hint  # outcome_reason still owned by PolicyStage
+
+
+class TestIntentCaching:
+    """Intent is classified once per session, then reused from state.
+
+    `retry_decision_node` persists `resolution.task_intent` onto
+    `semantic_state.task_intent`; every later governor resolve for the same
+    session must read that value instead of paying another LLM call.
+    """
+
+    def test_intent_stage_skips_llm_when_cached(self):
+        mock = Mock(return_value=TaskIntent.NORMAL_EXECUTION)
+        ctx = _ctx()
+        ctx.state.semantic_state.task_intent = "RECOVERABLE_DEMO"
+        with patch(
+            "reforge.runtime.orchestration.governor.intent_stage.classify_intent", mock
+        ):
+            ctx = IntentStage().execute(ctx)
+        assert ctx.task_intent == "RECOVERABLE_DEMO"
+        mock.assert_not_called()
+
+    def test_intent_stage_classifies_when_not_cached(self):
+        mock = Mock(return_value=TaskIntent.NORMAL_EXECUTION)
+        with patch(
+            "reforge.runtime.orchestration.governor.intent_stage.classify_intent", mock
+        ):
+            ctx = IntentStage().execute(_ctx())
+        assert ctx.task_intent == "NORMAL_EXECUTION"
+        mock.assert_called_once()
+
+    def test_multi_attempt_session_classifies_once(self):
+        # Simulate the graph loop: resolve → persist task_intent → resolve again.
+        mock = Mock(return_value=TaskIntent.NORMAL_EXECUTION)
+        state = _state(exit_code=1, retry_count=0)
+        with patch(
+            "reforge.runtime.orchestration.governor.intent_stage.classify_intent", mock
+        ):
+            first = ExecutionGovernor().resolve(state)
+            state = state.model_copy(
+                update={
+                    "semantic_state": state.semantic_state.model_copy(
+                        update={"task_intent": first.task_intent}
+                    ),
+                    "control_state": state.control_state.model_copy(
+                        update={"retry_count": 1}
+                    ),
+                }
+            )
+            second = ExecutionGovernor().resolve(state)
+        assert first.task_intent == second.task_intent == "NORMAL_EXECUTION"
+        mock.assert_called_once()
