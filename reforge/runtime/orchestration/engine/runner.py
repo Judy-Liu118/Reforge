@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 
-from reforge.config import config
+from reforge.memory.execution_memory import ExecutionMemory
 from reforge.memory.substrate import CompositeMemorySubstrate, MemorySubstrate
-from reforge.memory.writer import record_from_final_state
+from reforge.memory.writer import execution_record_from_final_state, record_from_final_state
 from reforge.observability.tracing.collector import TraceCollector
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.models import ExecutionContext
@@ -126,6 +126,12 @@ class RuntimeRunner:
                     mem_record = record_from_final_state(current, self._conversation_id)
                     if mem_record is not None:
                         self._memory_substrate.write(mem_record)
+                    # Write side of the governor's repair recall: persist
+                    # (failure signature → repair that worked) so a future
+                    # session's ClassifyStage can recall it as a repair_hint.
+                    exec_record = execution_record_from_final_state(current)
+                    if exec_record is not None:
+                        ExecutionMemory().record(**exec_record)
                 yield node_name, current
 
     @property

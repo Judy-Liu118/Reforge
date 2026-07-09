@@ -69,3 +69,39 @@ def record_from_final_state(state: object, session_id: str) -> MemoryRecord | No
         recovery_action="; ".join(recovery_actions),
         traceback=traceback,
     )
+
+
+def execution_record_from_final_state(state: object) -> dict | None:
+    """Build ExecutionMemory.record() kwargs from a completed RuntimeState.
+
+    This is the write side of the governor's repair recall: ClassifyStage
+    calls ExecutionMemory.recall_similar() with the current failure's
+    fingerprint, so something has to persist (signature → repair that
+    worked) pairs. Only RECOVERED sessions qualify — a record without a
+    proven repair carries no hint value and would shadow useful records
+    in the top-3 recall window.
+
+    Returns None when the session doesn't qualify (no failure snapshot,
+    not recovered, or reflection produced no concrete fix).
+    """
+    ss = getattr(state, "semantic_state", None)
+    os_ = getattr(state, "outcome_state", None)
+    snapshot = getattr(ss, "last_failure", None) if ss else None
+
+    outcome = (os_.task_outcome if os_ else None) or ""
+    if outcome != "RECOVERED" or snapshot is None:
+        return None
+    suggested_fix = getattr(snapshot, "suggested_fix", "")
+    if not suggested_fix:
+        return None
+
+    return {
+        "request": getattr(state, "user_request", ""),
+        "outcome": outcome,
+        "failure_mode": getattr(snapshot, "failure_mode", "") or "execution_error",
+        "retryable": True,
+        "repair_strategy": suggested_fix,
+        "task_intent": (ss.task_intent if ss else None) or "",
+        "problem_signature": getattr(snapshot, "problem_signature", {}) or {},
+        "error_type": getattr(snapshot, "error_type", ""),
+    }

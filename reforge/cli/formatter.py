@@ -28,7 +28,7 @@ def format_node(node_name: str, state: RuntimeState) -> str | None:
     if node_name == "planner":
         # Show the first ~6 lines so multi-line plans render in full.
         # Single-line plans are unaffected.
-        lines = state.generated_code.strip().splitlines()
+        lines = (state.semantic_state.plan or "").strip().splitlines()
         preview = "\n         ".join(lines[:6])
         if len(lines) > 6:
             preview += f"\n         ... ({len(lines) - 6} more lines)"
@@ -74,7 +74,7 @@ def format_node(node_name: str, state: RuntimeState) -> str | None:
         if action == "RETRY":
             policy_line = f"  [Policy] RETRY (attempt {state.control_state.retry_count + 1})"
         elif action == "STOP":
-            policy_line = f"  [Policy] STOP"
+            policy_line = "  [Policy] STOP"
         else:
             policy_line = f"  [Policy] {action}"
         return f"{policy_line}\n  [Reason] {reason}"
@@ -90,7 +90,7 @@ def format_traceback(state: RuntimeState) -> str | None:
     if not state.traceback:
         return None
     tb = state.traceback.strip()
-    lines = [l for l in tb.split("\n") if l.strip()]
+    lines = [ln for ln in tb.split("\n") if ln.strip()]
     if not lines:
         return None
     error_line = lines[-1]
@@ -112,7 +112,7 @@ def format_stdout_tail(state: RuntimeState, *, max_lines: int = 20) -> str | Non
     if exit_code is not None and exit_code == 0:
         return None
     raw = state.execution_output.stdout.strip()
-    lines = [l for l in raw.split("\n") if l.strip()]
+    lines = [ln for ln in raw.split("\n") if ln.strip()]
     if not lines:
         return None
     tail = lines[-max_lines:]

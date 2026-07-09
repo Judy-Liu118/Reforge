@@ -150,14 +150,37 @@ class RuntimeControlState(BaseModel):
     policy_reason: str | None = Field(default=None)
 
 
+class FailureSnapshot(BaseModel):
+    """Snapshot of the most recent *failed* attempt — survives later successes.
+
+    Written by the reflection node whenever an attempt fails; never cleared.
+    RuntimeState only keeps the latest execution result, so by the time a
+    RECOVERED session reaches final_response the failing traceback is gone.
+    This snapshot is what lets the memory write-back pair the failure's
+    structural signature with the repair that ended up working.
+    """
+
+    error_type: str = Field(default="")
+    suggested_fix: str = Field(default="")
+    failure_mode: str = Field(default="")
+    problem_signature: dict = Field(default_factory=dict)
+
+
 class SemanticState(BaseModel):
     """Owner: reflection / evaluator / intent classifier. Hints only, no authority."""
 
     task_intent: str | None = Field(default=None)
+    plan: str | None = Field(default=None)
     reflection_summary: str | None = Field(default=None)
     evaluation_summary: str | None = Field(default=None)
     reflection_result: Optional[ReflectionResult] = Field(default=None)
     evaluation_result: Optional[EvaluationResult] = Field(default=None)
+    # Set by retry_decision_node from the governor's RuntimeResolution; consumed
+    # by RetryContextData/build_retry_prompt so the next codegen attempt sees
+    # the memory-recalled repair strategy. Cleared (None) when the governor
+    # produced no hint, so a stale hint never leaks into a later attempt.
+    repair_hint: str | None = Field(default=None)
+    last_failure: Optional[FailureSnapshot] = Field(default=None)
 
 
 class OutcomeState(BaseModel):

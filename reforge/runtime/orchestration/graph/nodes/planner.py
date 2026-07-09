@@ -1,4 +1,10 @@
-"""Planner node — produce an initial plan + extract process constraints."""
+"""Planner node — produce an initial plan + extract process constraints.
+
+The plan lands on `semantic_state.plan` and is injected into the codegen
+prompt (see codegen.py) — this is also where memory influences the *first*
+attempt: PlannerMemoryContext prepends similar past sessions to the planner
+prompt, and the resulting plan carries that context forward.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +34,6 @@ def planner_node(
     plan = llm.chat(PLANNER_SYSTEM, user_msg)
     reqs = extract_requirements(state.user_request)
     return {
-        "generated_code": plan,
+        "semantic_state": state.semantic_state.model_copy(update={"plan": plan}),
         "task_requirements": reqs,
     }

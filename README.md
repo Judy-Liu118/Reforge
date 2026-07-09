@@ -55,23 +55,29 @@ sequenceDiagram
 
     U->>W: "read CSV, calc Revenue mean"
     W->>M: recall similar past sessions
-    M-->>W: prior repair strategies
+    M-->>W: plan context from prior runs
     W->>S: run generated code
     S-->>W: exit_code=1, stderr=KeyError
     W->>E: EXECUTION_FAILED
     W->>G: classify + decide
-    G-->>W: RETRY (failure_mode=column_mismatch)
-    W->>S: run regenerated code
+    G->>M: recall repairs by failure fingerprint
+    M-->>G: repair_hint ("match the CSV header exactly")
+    G-->>W: RETRY (failure_mode=execution_error, repair_hint)
+    W->>S: run regenerated code (prompt carries repair_hint)
     S-->>W: exit_code=0, stdout="7668.74"
     W->>E: EXECUTION_SUCCEEDED + TASK_COMPLETED
-    W->>M: store RECOVERY with problem_signature
+    W->>M: store RECOVERY (problem_signature → repair that worked)
 ```
 
 The honest comparison is an **ablation, not a product race**: same model, same
-task, governor + memory **off** vs **on**. With the runtime layer off, a naive
-retry loop either burns its budget, gives up, or returns a confidently wrong
-answer with no audit trail. With it on, the failure is classified, the retry is
-targeted, and the whole run is replayable from the event log.
+task, the governor decision layer and its memory-recalled repair hints **off**
+vs **on**. With the runtime layer off, a naive retry loop either burns its
+budget, gives up, or returns a confidently wrong answer with no audit trail.
+With it on, the failure is classified, the retry prompt carries a repair hint
+recalled by failure fingerprint, and the whole run is replayable from the
+event log. (Reflection-based root-cause context is part of the base loop and
+stays on in both arms — the toggle isolates the decision layer + recall, not
+every use of memory.)
 
 The toggle is a real env flag, not a slogan:
 

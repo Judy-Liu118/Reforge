@@ -93,7 +93,9 @@ def code_generation_node(state: RuntimeState) -> dict:
     if extra_system:
         system_prompt = base_system + "\n\n" + "\n".join(extra_system)
 
-    user_msg = f"Request: {state.user_request}{retry_prompt}"
+    plan = (state.semantic_state.plan or "").strip()
+    plan_section = f"\n\nPlan:\n{plan}" if plan else ""
+    user_msg = f"Request: {state.user_request}{plan_section}{retry_prompt}"
     if use_vision:
         llm = LLMClient.for_vision_codegen()
         raw = llm.chat_multimodal(system_prompt, user_msg, target_images)

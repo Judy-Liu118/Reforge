@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from reforge.memory.execution_memory import ExecutionMemory
+from reforge.memory.fingerprint import extract_fingerprint
 from reforge.runtime.classification.classifier import FailureClassifier
 from reforge.runtime.orchestration.governor.stages import RuntimeContext
 from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore
@@ -37,8 +38,21 @@ class ClassifyStage:
 
         # Recall past repairs for this failure mode → forwarded as repair_hint,
         # NOT outcome_reason (which PolicyStage owns and will overwrite).
+        # The current failure's structural fingerprint drives the recall
+        # scoring (error_class / root_cause / domain matches) — without it,
+        # recall degrades to coarse failure_mode + word overlap.
         if ctx.classification.retryable and ctx.classification.failure_mode not in ("none", ""):
-            records = self._memory.recall_similar(ctx.request, ctx.classification.failure_mode)
+            snapshot = ctx.state.semantic_state.last_failure
+            if snapshot is not None and snapshot.problem_signature:
+                signature = snapshot.problem_signature
+            else:
+                stderr = execution_output.stderr if execution_output else ""
+                signature = extract_fingerprint(stderr).to_dict()
+            records = self._memory.recall_similar(
+                ctx.request,
+                ctx.classification.failure_mode,
+                problem_signature=signature,
+            )
             if records and records[0].repair_strategy:
                 ctx.repair_hint = records[0].repair_strategy
 

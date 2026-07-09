@@ -30,7 +30,7 @@ class TraceCollector:
             self._emit(EventType.PLAN_STARTED, attempt, now,
                        input_summary=_summarize(state.user_request, 60))
             self._emit(EventType.PLAN_COMPLETED, attempt, now,
-                       output_summary=_summarize(state.generated_code, 60))
+                       output_summary=_summarize(state.semantic_state.plan or "", 60))
 
         elif node_name == "code_generation":
             self._emit(EventType.CODEGEN_STARTED, attempt, now,

@@ -6,6 +6,48 @@ versions track the `pyproject.toml` `[project] version`.
 
 ## [Unreleased]
 
+### Fixed
+- **memory → repair_hint → retry-prompt loop wired end-to-end** (previously
+  four independent breaks left the headline recall claim dead in production):
+  - `reflection_node` now snapshots each failed attempt
+    (`SemanticState.last_failure`: error_type, suggested fix, structural
+    fingerprint) so the failing context survives the recovery attempt
+  - `RuntimeRunner` persists `(problem_signature → repair that worked)` to
+    `ExecutionMemory` when a session ends RECOVERED — the store the governor
+    recalls from finally has a production write path
+    (`memory/writer.py::execution_record_from_final_state`)
+  - `ClassifyStage` passes the current failure's fingerprint to
+    `recall_similar`, activating the structural scoring weights
+    (error_class / root_cause / domain) that previously never fired
+  - `retry_decision_node` lands the governor's `repair_hint` on
+    `semantic_state.repair_hint` (cleared when recall is empty), and
+    `RetryContextData` / `build_retry_prompt` render it into the retry
+    codegen prompt as a "Repair hint" section
+  - End-to-end contract in `tests/test_repair_hint_e2e.py`: write side,
+    read side, hint-clearing, and prompt rendering
+- **Planner output is now consumed**: the plan lands on
+  `semantic_state.plan` and is injected into the codegen prompt (previously
+  it was written to `generated_code` and unconditionally overwritten —
+  a dead LLM call per session). CLI formatter and trace collector read the
+  new location
+- **Intent classified once per session**: `IntentStage` reuses
+  `semantic_state.task_intent` persisted by `retry_decision_node`, so an
+  N-attempt session pays one intent LLM call instead of N (and intent can
+  no longer flip mid-run between attempts)
+- **CI**: removed phantom `REFORGE_DISABLE_LLM` env (referenced nowhere in
+  code) and the `|| true` on the ruff step — lint failures now fail the
+  build; the tree is ruff-clean (145 violations fixed)
+
+### Removed
+- Dead code islands with no production entry point: `runtime/tasks/`,
+  `runtime/workers/`, `runtime/parallel/` (superseded by
+  `decomposition/async_runner`'s ThreadPoolExecutor), and
+  `runtime/policy/policy_engine.py` (unconsumed wrapper around
+  `RetryPolicy`). The event↔state consistency validator moved from
+  `runtime/bridge/consistency.py` to `reforge/tests/_consistency.py` —
+  it is test infrastructure and now lives next to the contract tests
+  that call it
+
 ### Added
 - **Visual self-heal — vision codegen routing**: when the user request
   references a `target.png` in the workspace AND matches visual-reproduction

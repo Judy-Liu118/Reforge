@@ -31,13 +31,9 @@ from reforge.runtime.domain.state.models import RuntimeState
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
-def _env_truthy(name: str) -> bool:
-    """Case-insensitive boolean parse for an environment variable."""
-    return os.environ.get(name, "").strip().lower() in _TRUTHY
-
-
 def _is_bypass_enabled() -> bool:
-    return _env_truthy("REFORGE_GOVERNOR_BYPASS")
+    """Case-insensitive boolean parse of REFORGE_GOVERNOR_BYPASS."""
+    return os.environ.get("REFORGE_GOVERNOR_BYPASS", "").strip().lower() in _TRUTHY
 
 
 def _naive_resolution(state: RuntimeState) -> RuntimeResolution:
@@ -78,9 +74,21 @@ def retry_decision_node(state: RuntimeState) -> dict:
     control_state = state.control_state.model_copy(
         update={"policy_reason": resolution.reason}
     )
-    semantic_state = state.semantic_state.model_copy(
-        update={"task_intent": resolution.task_intent}
-    )
+    semantic_updates: dict = {
+        "task_intent": resolution.task_intent,
+        # Always overwrite (None clears) so a stale hint never leaks into
+        # a later attempt whose recall came up empty.
+        "repair_hint": resolution.repair_hint,
+    }
+    # Stamp the typed failure_mode onto this attempt's failure snapshot —
+    # reflection took it before classification ran, and the ExecutionMemory
+    # write-back needs the (mode + signature → repair) pairing complete.
+    last_failure = state.semantic_state.last_failure
+    if last_failure is not None and resolution.failure_mode not in ("", "none"):
+        semantic_updates["last_failure"] = last_failure.model_copy(
+            update={"failure_mode": resolution.failure_mode}
+        )
+    semantic_state = state.semantic_state.model_copy(update=semantic_updates)
     classification = FailureClassification(
         is_expected_failure=resolution.is_expected_failure,
         retryable=resolution.retryable,

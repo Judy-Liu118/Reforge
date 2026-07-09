@@ -176,12 +176,13 @@ flowchart LR
     Log --> Replay[SessionReplay]
     Log --> Projection[RuntimeStateProjection]
 
-    Projection -->|compared via| Consistency[bridge.consistency<br/>FieldMismatch detector]
+    Projection -->|compared via| Consistency[tests._consistency<br/>FieldMismatch detector]
 ```
 
 The projection layer (`runtime/events/projection.py`) reconstructs a view
 of `RuntimeState` from events alone — used by the consistency validator
-(`runtime/bridge/consistency.py`) to verify that no node-side mutation
+(`reforge/tests/_consistency.py`, test infrastructure living next to the
+contract tests that call it) to verify that no node-side mutation
 drifts away from what events recorded.
 
 This is the foundation for the long-term migration to event-sourced
@@ -216,24 +217,28 @@ flowchart TB
     Composite[CompositeMemorySubstrate] -.implements.-> protocol
     Sqlite[SqliteMemorySubstrate] -.implements.-> protocol
 
-    Composite --> ExecMem[ExecutionMemory JSONL<br/>failure_mode + repair_strategy]
     Composite --> Store2[MemoryStore JSON<br/>RECOVERY / FAILURE / SUCCESS_PATTERN]
-    Composite --> Traj[TrajectoryStore JSONL<br/>full semantic arc per session]
 
     Planner[Planner Node] -.recalls.-> protocol
     Reflection[Reflection Node] -.recalls.-> protocol
-    Final[Final Response Node] -.stores.-> protocol
-    Governor[ClassifyStage] -.queries.-> Traj
+    Runner[RuntimeRunner<br/>at final_response] -.stores.-> protocol
+    Runner -->|RECOVERED sessions:<br/>signature → repair| ExecMem[ExecutionMemory JSONL<br/>failure_mode + fingerprint + repair_strategy]
+    Governor[ClassifyStage] -->|recall by failure<br/>fingerprint → repair_hint| ExecMem
+    Governor -.queries.-> Traj[TrajectoryStore JSONL<br/>full semantic arc per session]
 ```
 
 `MemorySubstrate` is a Protocol — any object satisfying `recall()` /
 `store()` can be injected via `build_graph(memory_substrate=...)` or
-`RuntimeRunner(memory_substrate=...)`. The default
-`CompositeMemorySubstrate` wraps three layers.
+`RuntimeRunner(memory_substrate=...)`. `ExecutionMemory` and
+`TrajectoryStore` sit deliberately outside the Protocol: the governor's
+repair recall is keyed by structural failure fingerprint (not free-text
+query), so it has its own narrow read/write path.
 
 ### Why three layers, not one vector DB
 
-- `ExecutionMemory` is fast-path failure→repair lookup keyed by `failure_mode`
+- `ExecutionMemory` is fast-path failure→repair lookup: written when a
+  session ends RECOVERED, recalled by `ClassifyStage` with the current
+  failure's fingerprint, surfaced to codegen as the retry `repair_hint`
 - `MemoryStore` is the typed long-term store with classification
 - `TrajectoryStore` carries the full session arc for cross-session similarity
 

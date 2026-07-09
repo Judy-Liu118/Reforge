@@ -17,6 +17,7 @@ class RetryContextData:
     execution_error: str = ""
     reflection_summary: str = ""
     evaluation_feedback: str = ""
+    repair_hint: str = ""
     retry_reason: str = ""
     attempt_index: int = 1
     task_intent: str = ""
@@ -51,6 +52,7 @@ class RetryContextData:
                 or (reflection_result.error_summary if reflection_result else "")
             ),
             evaluation_feedback=eval_feedback,
+            repair_hint=semantic_state.repair_hint or "",
             retry_reason=(
                 control_state.policy_reason
                 or (classification.failure_mode if classification else "unknown")
@@ -101,6 +103,13 @@ def build_retry_prompt(ctx: RetryContextData) -> str:
 
     if ctx.evaluation_feedback:
         parts.append(f"Evaluation feedback:\n{ctx.evaluation_feedback}")
+        parts.append("")
+
+    if ctx.repair_hint:
+        parts.append(
+            "Repair hint (from memory of similar past failures):\n"
+            f"{ctx.repair_hint}"
+        )
         parts.append("")
 
     parts.append(f"Retry reason: {ctx.retry_reason}")
