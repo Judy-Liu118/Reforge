@@ -142,6 +142,24 @@ def _scoped_config_attr(name: str, value) -> Iterator[None]:
 
 
 @contextlib.contextmanager
+def _isolated_memory_scope() -> Iterator[None]:
+    """Cold-start memory for one (mode, seed) leg.
+
+    Points both the project ledger (execution_memory.jsonl — recalled by
+    the governor's ClassifyStage) and the global substrate (reflection
+    recall, on in both arms) at a fresh tmp dir, so seeds are independent
+    and neither arm inherits records written by the other.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="phase0_mem_"))
+    try:
+        with _scoped_env("REFORGE_PROJECT_DIR", str(tmp / "project")), \
+             _scoped_env("REFORGE_HOME", str(tmp / "home")):
+            yield
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@contextlib.contextmanager
 def _temp_workspace(fixture_paths: list[Path]) -> Iterator[Path]:
     """Create a tmp dir, copy fixture files in, return the path. Cleans up."""
     tmp = Path(tempfile.mkdtemp(prefix="phase0_"))
@@ -366,12 +384,13 @@ class PhaseZeroDriver:
             bypass_value = "1" if mode == "naive" else None
             with _scoped_env(_BYPASS_ENV, bypass_value):
                 for seed in range(self._n_seeds):
-                    for case in bird_cases:
-                        logger.info("calibration: %s seed=%d case=%s", mode, seed, case.case_id)
-                        records.append(_run_bird_case(case, mode=mode, seed=seed))
-                    for toy in TOY_CASES:
-                        logger.info("calibration: %s seed=%d case=%s", mode, seed, toy.case_id)
-                        records.append(_run_toy_case(toy, mode=mode, seed=seed))
+                    with _isolated_memory_scope():
+                        for case in bird_cases:
+                            logger.info("calibration: %s seed=%d case=%s", mode, seed, case.case_id)
+                            records.append(_run_bird_case(case, mode=mode, seed=seed))
+                        for toy in TOY_CASES:
+                            logger.info("calibration: %s seed=%d case=%s", mode, seed, toy.case_id)
+                            records.append(_run_toy_case(toy, mode=mode, seed=seed))
         return records
 
     def _load_bird_cases(self) -> list[SqlCase]:
