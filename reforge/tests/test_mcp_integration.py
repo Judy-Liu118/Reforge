@@ -9,6 +9,7 @@ takes one line via `discover_and_register()`.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,10 +27,19 @@ from reforge.runtime.skills.mcp import (
 
 _SERVER_CMD = [sys.executable, "-m", "reforge.tests._mcp_test_server"]
 
+# The server subprocess must import `reforge` even when pytest has chdir'd
+# into a tmp dir and the package is not pip-installed — prepend the repo
+# root to PYTHONPATH so the spawn works from a bare checkout.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SERVER_ENV = {
+    **os.environ,
+    "PYTHONPATH": str(_REPO_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+}
+
 
 @pytest.fixture
 def session() -> MCPSession:
-    s = MCPSession.connect(_SERVER_CMD)
+    s = MCPSession.connect(_SERVER_CMD, env=_SERVER_ENV)
     try:
         yield s
     finally:
@@ -74,7 +84,7 @@ class TestMCPSession:
         assert result.get("isError") is True
 
     def test_context_manager_shutdown(self) -> None:
-        with MCPSession.connect(_SERVER_CMD) as s:
+        with MCPSession.connect(_SERVER_CMD, env=_SERVER_ENV) as s:
             assert s.server_info["name"] == "reforge-test-server"
         # exiting the with block triggers shutdown — process should be dead
         assert s._proc.poll() is not None  # type: ignore[attr-defined]
@@ -130,7 +140,7 @@ class TestMCPSkill:
 class TestDiscoverAndRegister:
     def test_registers_all_tools(self, tmp_path: Path) -> None:
         reg = SkillRegistry()
-        session, skills = discover_and_register(reg, _SERVER_CMD)
+        session, skills = discover_and_register(reg, _SERVER_CMD, env=_SERVER_ENV)
         try:
             assert len(skills) == 3
             names = set(reg.names())
@@ -148,7 +158,7 @@ class TestDiscoverAndRegister:
 
     def test_openai_tools_schema_export_includes_mcp(self) -> None:
         reg = SkillRegistry()
-        session, _ = discover_and_register(reg, _SERVER_CMD)
+        session, _ = discover_and_register(reg, _SERVER_CMD, env=_SERVER_ENV)
         try:
             tools = reg.to_openai_tools()
             assert any(
