@@ -134,9 +134,11 @@ to make a number look better are visible as such.
   calibration corpus (5 BIRD-simple picks + 4 hand-built toys, including
   the timeout decoy that probes the deliberate-STOP code path).
 - [`docs/eval/PHASE0_CALIBRATION.md`](docs/eval/PHASE0_CALIBRATION.md) —
-  Phase 0 instrument calibration: **GO** as of 2026-06-26; all four
-  mechanism gates passed (path-swap on bypass, governor pipeline fires,
-  timeout deliberate-STOP reachable, seeds plumb through).
+  Phase 0 instrument calibration: **GO** as of 2026-07-10, re-run after
+  the memory→repair_hint loop was wired end-to-end and the driver gained
+  per-(mode, seed) cold-start memory isolation; all four mechanism gates
+  passed (path-swap on bypass, governor pipeline fires, timeout
+  deliberate-STOP reachable, seeds plumb through).
 - Phase 1 BIRD ablation is in progress; the field-of-record for
   passed/failed is the SQL comparator
   (`reforge.runtime.sql.comparator`), not the runtime's internal LLM

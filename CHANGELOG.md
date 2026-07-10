@@ -7,6 +7,17 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **Phase 0 driver: cold-start memory per (mode, seed) leg** — with the
+  memory loop now live, all 54 calibration runs would have shared one
+  `execution_memory.jsonl` (and the global reflection substrate); each leg
+  now points `REFORGE_PROJECT_DIR` / `REFORGE_HOME` at a fresh tmp dir.
+  Calibration re-run 2026-07-10 on the repaired loop: verdict **GO**, all
+  four mechanism gates passed (`docs/eval/PHASE0_CALIBRATION.md`).
+- **Sandbox subprocess backend runs generated code under `sys.executable`**
+  instead of whatever `python` resolves to on PATH, so the sandbox sees the
+  same dependency set `capability_check` assumed.
+- **MCP test suite no longer depends on an editable install** — the spawned
+  server subprocess gets the repo root prepended to `PYTHONPATH`.
 - **memory → repair_hint → retry-prompt loop wired end-to-end** (previously
   four independent breaks left the headline recall claim dead in production):
   - `reflection_node` now snapshots each failed attempt
