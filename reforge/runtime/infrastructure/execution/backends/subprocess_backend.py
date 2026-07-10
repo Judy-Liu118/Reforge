@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -54,8 +55,12 @@ class SubprocessBackend:
         child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         start = time.perf_counter()
         try:
+            # sys.executable, not PATH's "python": the sandbox must run in
+            # the same interpreter/venv as the runtime, or the generated
+            # code sees a different dependency set than capability_check
+            # assumed.
             proc = subprocess.run(
-                ["python", str(script_path)],
+                [sys.executable, str(script_path)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
