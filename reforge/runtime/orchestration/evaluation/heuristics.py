@@ -40,6 +40,22 @@ class HeuristicEvaluator:
     MIN_OUTPUT_LENGTH = 5
     MIN_DATA_OUTPUT_LENGTH = 20  # Data tasks need more than a one-word answer
 
+    # Explicit output-format contract: the request pins the exact shape of
+    # stdout (e.g. "print rows one per line ... Print nothing else"). Under
+    # such a contract brevity is *compliance* — a one-character scalar can be
+    # the complete correct answer — so the length/digit plausibility checks
+    # (short-output floor, output_contains_data, research_output_quality)
+    # are suspended. Emptiness still fails: the contract demands some output.
+    # Calibrated on held-out BIRD questions, never on the Phase 1 picks —
+    # see docs/eval/EVALUATOR_CALIBRATION.md and KNOWN_LIMITATIONS L6.
+    _OUTPUT_CONTRACT_RE = re.compile(
+        r"print nothing else|nothing else\b|no preamble|"
+        r"only (?:print|output|the (?:number|value|result|answer))|"
+        r"(?:print|output) only|"
+        r"只输出|只打印|不要(?:输出|打印)(?:其他|别的|任何其他)",
+        re.IGNORECASE,
+    )
+
     # Patterns for detecting suspicious results
     SUSPICIOUS_NUMERIC = {"0", "0.0", "0.00", "none", "null", "nan", "inf", "-inf"}
 
@@ -144,6 +160,7 @@ class HeuristicEvaluator:
         stdout = (state.execution_output.stdout or "").strip()
         stderr = (state.execution_output.stderr or "").strip()
         is_intentional = self._is_intentional_task(state.user_request)
+        has_output_contract = bool(self._OUTPUT_CONTRACT_RE.search(state.user_request))
 
         # Check: clean_exit — exit_code 0 is the strongest signal of success.
         # A non-zero exit (with or without traceback) is execution failure,
@@ -158,8 +175,11 @@ class HeuristicEvaluator:
                 detail=f"script exited with non-zero code {exit_code}",
             ))
 
-        # Check: output_not_empty
-        has_output = len(stdout) >= self.MIN_OUTPUT_LENGTH
+        # Check: output_not_empty. With an explicit output contract the
+        # short-output floor is suspended (a bare scalar can be the whole
+        # answer); genuinely empty stdout still fails.
+        min_output_length = 1 if has_output_contract else self.MIN_OUTPUT_LENGTH
+        has_output = len(stdout) >= min_output_length
         checks.append(EvalCheck(
             name="output_not_empty",
             passed=has_output,
@@ -272,7 +292,7 @@ class HeuristicEvaluator:
         # Check: output_contains_data — data-oriented tasks need substantive output
         lowered_request = state.user_request.lower()
         is_data_task = any(kw in lowered_request for kw in self.DATA_TASK_KEYWORDS)
-        if (is_data_task and not is_intentional and stdout
+        if (is_data_task and not is_intentional and not has_output_contract and stdout
                 and len(stdout) < self.MIN_DATA_OUTPUT_LENGTH
                 and not any(c.isdigit() for c in stdout)):
             checks.append(EvalCheck(
@@ -340,7 +360,7 @@ class HeuristicEvaluator:
         # Check: research_output_quality — verification tasks need quantitative output
         lowered_request = state.user_request.lower()
         is_research_verify = any(kw in lowered_request for kw in self.RESEARCH_VERIFY_KEYWORDS)
-        if (is_research_verify and not is_intentional and stdout
+        if (is_research_verify and not is_intentional and not has_output_contract and stdout
                 and (len(stdout) < self.MIN_RESEARCH_OUTPUT_LENGTH
                      or not any(c.isdigit() for c in stdout))):
             checks.append(EvalCheck(

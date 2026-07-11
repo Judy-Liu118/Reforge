@@ -7,6 +7,20 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **Evaluator false-negative pressure on contract-format output (L6 gating
+  fix)** — `HeuristicEvaluator` penalized correct bare-scalar answers
+  (`"5"`, `"-"`) via its length/digit plausibility checks even when the
+  request itself pinned the output shape ("Print nothing else"). 100% of
+  Phase 1's 169 evaluator false negatives attributed to this. The evaluator
+  now detects an explicit output contract (generic phrases: "print nothing
+  else", "output only …", 只输出 …) and suspends the length-based checks;
+  emptiness, tracebacks, exit codes, and all anti-cheating checks are
+  unchanged. Validated held-out (300 pool questions the Phase 1 picks never
+  touched, seed 20260711): FN 42.7% → 0.0%, zero rejection-integrity
+  regressions. Protocol + results: `docs/eval/EVALUATOR_CALIBRATION.md`;
+  reproduce with `scripts/calibrate_evaluator_heldout.py`. Clears the
+  governor-vs-naive axis for a fresh run — old Phase 1 records must not be
+  re-scored (the evaluator drives runtime retry behavior).
 - **Phase 0 driver: cold-start memory per (mode, seed) leg** — with the
   memory loop now live, all 54 calibration runs would have shared one
   `execution_memory.jsonl` (and the global reflection substrate); each leg

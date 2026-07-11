@@ -657,6 +657,19 @@ relative to execution-error retries in the policy.
 > before the governor-vs-naive axis is re-run; the anti-patterns
 > below still apply (fix the evaluator on held-out data, not on this
 > corpus).
+>
+> **Gating fix landed — 2026-07-11**
+> (`docs/eval/EVALUATOR_CALIBRATION.md`). Attribution: 100% of the
+> Phase 1 false negatives were length-based checks penalizing
+> contract-compliant scalar answers ("Print nothing else" is the
+> task's own instruction). Fix: the evaluator now recognizes an
+> explicit output contract in the request and suspends the
+> length/digit plausibility checks (emptiness, tracebacks, exit
+> codes unchanged). Validated on 300 held-out pool questions (seed
+> 20260711, picks untouched): FN 42.7% → 0.0%, rejection integrity
+> 0 failures. The axis is cleared to re-run; headlines may NOT be
+> recomputed from the old records (the evaluator drives runtime
+> retry behavior, so only a fresh run measures the fixed system).
 
 ### Anti-patterns — do NOT apply
 
