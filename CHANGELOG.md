@@ -60,6 +60,20 @@ versions track the `pyproject.toml` `[project] version`.
   that call it
 
 ### Added
+- **Phase 1 BIRD ablation: run and reported** (`docs/eval/PHASE1_BIRD_ABLATION.md`,
+  raw records in `docs/eval/phase1_records.jsonl`): 20 pre-registered cases ×
+  {governor, naive} × 5 seeds = 200 runs, graded by the SQL comparator.
+  Primary result is an honest null — success_rate 65.0% in both arms
+  (paired Δ 95% CI [-4.4%, +4.4%]) with the governor arm paying 3.1×
+  tokens-per-solved and 3.2× wall-clock. The locked sensitivity appendix
+  (PHASE0_METRICS v4 §4) returns **ASYMMETRIC**: the internal evaluator's
+  false-negative rate on comparator-correct attempts is 80.8% (governor) vs
+  52.3% (naive), so retries are dominated by re-solving already-correct
+  answers (34/100 governor runs; 3 lost a correct answer; 5 genuine
+  recoveries). Evaluator calibration is the gating fix before this axis is
+  re-run. Harness: `reforge/benchmark/phase1/` (leg-granular resume,
+  attempt-level comparator grading via `RuntimeRunner.stream()`,
+  `--report-only` recompute).
 - **Visual self-heal — vision codegen routing**: when the user request
   references a `target.png` in the workspace AND matches visual-reproduction
   intent (复刻 / reproduce / front-end / UI), `code_generation_node` routes

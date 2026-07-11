@@ -139,10 +139,23 @@ to make a number look better are visible as such.
   per-(mode, seed) cold-start memory isolation; all four mechanism gates
   passed (path-swap on bypass, governor pipeline fires, timeout
   deliberate-STOP reachable, seeds plumb through).
-- Phase 1 BIRD ablation is in progress; the field-of-record for
-  passed/failed is the SQL comparator
-  (`reforge.runtime.sql.comparator`), not the runtime's internal LLM
-  evaluator — see KNOWN_LIMITATIONS L6 for why.
+- [`docs/eval/PHASE1_BIRD_ABLATION.md`](docs/eval/PHASE1_BIRD_ABLATION.md) —
+  Phase 1 BIRD ablation, run 2026-07-11: 20 locked cases × 2 arms × 5 seeds
+  (200 runs), field-of-record = SQL comparator (KNOWN_LIMITATIONS L6), corpus
+  frozen before the run ([`PHASE1_CORPUS.md`](docs/eval/PHASE1_CORPUS.md)).
+  **Honest null result on the primary metric**: success_rate 65.0% vs 65.0%,
+  paired Δ 95% CI [-4.4%, +4.4%] — no significant effect. The significant
+  deltas are all cost-side: the governor arm spends 3.1× tokens-per-solved
+  and 3.2× wall-clock for that unchanged success rate. The pre-registered
+  sensitivity appendix explains why and carries a mandatory caveat on every
+  headline row (**verdict: ASYMMETRIC**): the internal LLM evaluator rejects
+  80.8% of the governor arm's comparator-correct attempts, so the retry loop
+  mostly re-solves already-solved cases — 34/100 governor runs retried an
+  attempt-1 answer the comparator had already confirmed (3 of them lost the
+  correct answer in the process), against only 5 genuine wrong→right
+  recoveries. The instrument worked exactly as designed: the confound the
+  eval was built to catch (L6) is now quantified, and evaluator calibration
+  is the gating fix before this axis is re-run.
 
 ---
 
@@ -150,7 +163,8 @@ to make a number look better are visible as such.
 
 > **Early descriptive snapshot — pre-dates the pre-registered eval above.**
 > Kept for transparency; do not read as a headline claim. The pre-registered
-> Phase 1 numbers (when they land) are the load-bearing comparison.
+> Phase 1 numbers ([`docs/eval/PHASE1_BIRD_ABLATION.md`](docs/eval/PHASE1_BIRD_ABLATION.md))
+> are the load-bearing comparison.
 
 One run of the curated 10-case suite against `deepseek-v4-pro`, no mocks
 (`docs/benchmark_sample.md`). Reported as-is, including the cases where actual

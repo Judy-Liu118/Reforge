@@ -644,6 +644,20 @@ relative to execution-error retries in the policy.
 - A future eval domain has no deterministic comparator and so cannot
   rely on the v4 SQL-comparator-locked rule.
 
+> **Trigger FIRED — Phase 1, 2026-07-11**
+> (`docs/eval/PHASE1_BIRD_ABLATION.md` Appendix D). The false-negative
+> rate on comparator-correct attempts is 80.8% (governor) vs 52.3%
+> (naive); the per-seed paired FN delta is +16.0pp, 95% CI
+> [+11.0, +21.1] — **ASYMMETRIC**, so every Phase 1 headline carries
+> the caveat. Case-level accounting: 34/100 governor runs retried an
+> attempt-1 answer the comparator had already confirmed (3 lost the
+> correct answer on retry), vs 5 genuine wrong→right recoveries.
+> Consequence: success_rate delta is null (65.0% both arms) at 3.1×
+> tokens-per-solved. Evaluator calibration is now the gating fix
+> before the governor-vs-naive axis is re-run; the anti-patterns
+> below still apply (fix the evaluator on held-out data, not on this
+> corpus).
+
 ### Anti-patterns — do NOT apply
 
 - ❌ Using `runtime_outcome` or `policy_reason` as the Phase 1 BIRD
