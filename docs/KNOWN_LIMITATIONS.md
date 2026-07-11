@@ -670,6 +670,15 @@ relative to execution-error retries in the policy.
 > 0 failures. The axis is cleared to re-run; headlines may NOT be
 > recomputed from the old records (the evaluator drives runtime
 > retry behavior, so only a fresh run measures the fixed system).
+>
+> **Run 2 confirms the fix in vivo — 2026-07-11**
+> (`docs/eval/PHASE1_BIRD_ABLATION_R2.md`). Evaluator FN 0.0% in
+> both arms across all 5 seeds, sensitivity verdict **symmetric**;
+> zero comparator-pass/runtime-FAILED runs (the L6 symptom is gone).
+> The remaining L6 exposure is the false-*positive* side only: a
+> rule-based evaluator cannot detect a semantically wrong query that
+> exits cleanly, which is why the SQL comparator stays the
+> field-of-record for benchmark grading.
 
 ### Anti-patterns — do NOT apply
 

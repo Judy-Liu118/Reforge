@@ -74,6 +74,16 @@ versions track the `pyproject.toml` `[project] version`.
   that call it
 
 ### Added
+- **Phase 1 BIRD ablation run 2 — post-calibration, the load-bearing
+  result** (`docs/eval/PHASE1_BIRD_ABLATION_R2.md`, raw records in
+  `docs/eval/phase1_records_r2.jsonl`; same locked corpus/protocol as run 1).
+  Sensitivity appendix: evaluator FN 0.0% both arms, verdict **symmetric**
+  — headlines stand unqualified. The success_rate null is real: 61.0% both
+  arms (paired Δ 95% CI [-4.4, +4.4]pp); recovery_rate +6.5pp crosses zero
+  (3 genuine recoveries / 100 governor runs, zero FN-driven retries). Cost
+  overhead shrank from 3.1× to 1.4× tokens-per-solved after the evaluator
+  fix. `write_report` now stamps the actual records path into the report
+  header instead of a hardcoded default.
 - **Phase 1 BIRD ablation: run and reported** (`docs/eval/PHASE1_BIRD_ABLATION.md`,
   raw records in `docs/eval/phase1_records.jsonl`): 20 pre-registered cases ×
   {governor, naive} × 5 seeds = 200 runs, graded by the SQL comparator.

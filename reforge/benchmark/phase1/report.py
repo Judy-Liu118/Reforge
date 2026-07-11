@@ -204,6 +204,7 @@ def write_report(
     *,
     out_path: Path,
     n_seeds: int,
+    records_path: str = "docs/eval/phase1_records.jsonl",
 ) -> None:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     head = _git_head()
@@ -217,7 +218,7 @@ def write_report(
     add(f"> Generated {now} at commit `{head}`. Corpus + protocol lock: "
         "`docs/eval/PHASE1_CORPUS.md`; methodology lock: `docs/eval/PHASE0_METRICS.md` v4. "
         "Field-of-record for passed/failed: `reforge.runtime.sql.comparator` "
-        "(KNOWN_LIMITATIONS L6). Raw records: `docs/eval/phase1_records.jsonl`.")
+        f"(KNOWN_LIMITATIONS L6). Raw records: `{records_path}`.")
     add("")
     add(f"- Sample: {n_cases} cases × 2 modes × {n_seeds} seeds = {len(records)} runs; "
         f"codegen model pinned: `{config.llm_model}`.")

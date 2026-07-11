@@ -64,7 +64,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         records = driver.run()
 
-    write_report(records, out_path=args.out, n_seeds=args.seeds)
+    write_report(
+        records,
+        out_path=args.out,
+        n_seeds=args.seeds,
+        records_path=args.records.as_posix(),
+    )
     print(f"Phase 1 report written to {args.out} ({len(records)} records)", file=sys.stderr)
     return 0
 

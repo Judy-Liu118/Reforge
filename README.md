@@ -140,22 +140,39 @@ to make a number look better are visible as such.
   passed (path-swap on bypass, governor pipeline fires, timeout
   deliberate-STOP reachable, seeds plumb through).
 - [`docs/eval/PHASE1_BIRD_ABLATION.md`](docs/eval/PHASE1_BIRD_ABLATION.md) —
-  Phase 1 BIRD ablation, run 2026-07-11: 20 locked cases × 2 arms × 5 seeds
-  (200 runs), field-of-record = SQL comparator (KNOWN_LIMITATIONS L6), corpus
-  frozen before the run ([`PHASE1_CORPUS.md`](docs/eval/PHASE1_CORPUS.md)).
-  **Honest null result on the primary metric**: success_rate 65.0% vs 65.0%,
-  paired Δ 95% CI [-4.4%, +4.4%] — no significant effect. The significant
-  deltas are all cost-side: the governor arm spends 3.1× tokens-per-solved
-  and 3.2× wall-clock for that unchanged success rate. The pre-registered
-  sensitivity appendix explains why and carries a mandatory caveat on every
-  headline row (**verdict: ASYMMETRIC**): the internal LLM evaluator rejects
-  80.8% of the governor arm's comparator-correct attempts, so the retry loop
-  mostly re-solves already-solved cases — 34/100 governor runs retried an
-  attempt-1 answer the comparator had already confirmed (3 of them lost the
-  correct answer in the process), against only 5 genuine wrong→right
-  recoveries. The instrument worked exactly as designed: the confound the
-  eval was built to catch (L6) is now quantified, and evaluator calibration
-  is the gating fix before this axis is re-run.
+  Phase 1 BIRD ablation **run 1** (2026-07-11, historical — measures the
+  pre-calibration system): 20 locked cases × 2 arms × 5 seeds (200 runs),
+  field-of-record = SQL comparator, corpus frozen before the run
+  ([`PHASE1_CORPUS.md`](docs/eval/PHASE1_CORPUS.md)). Null on success_rate
+  (65.0% both arms) at 3.1× tokens-per-solved, and the pre-registered
+  sensitivity appendix returned **ASYMMETRIC**: the internal evaluator was
+  rejecting 80.8% of the governor arm's comparator-correct attempts, so the
+  retry loop mostly re-solved already-solved cases (34/100 runs; 3 lost a
+  correct answer; 5 genuine recoveries). That fired the KNOWN_LIMITATIONS
+  L6 trigger and gated this axis on an evaluator fix.
+- [`docs/eval/EVALUATOR_CALIBRATION.md`](docs/eval/EVALUATOR_CALIBRATION.md) —
+  the gating fix, validated **held-out** (300 pool questions the Phase 1
+  picks never touched): the evaluator now recognizes an explicit
+  output-format contract in the request and stops penalizing
+  contract-compliant scalar answers. FN rate on correct output 42.7% → 0.0%,
+  zero rejection-integrity regressions. Old run-1 records were not
+  re-scored — the evaluator drives runtime retry decisions, so only a fresh
+  run measures the fixed system.
+- [`docs/eval/PHASE1_BIRD_ABLATION_R2.md`](docs/eval/PHASE1_BIRD_ABLATION_R2.md) —
+  Phase 1 **run 2** (2026-07-11, post-calibration — **the load-bearing
+  result**), same locked corpus and protocol. Sensitivity appendix:
+  evaluator FN 0.0% in both arms, **verdict symmetric** — headlines stand
+  unqualified. **The null on the primary metric is real, not an artifact**:
+  success_rate 61.0% vs 61.0% (paired Δ 95% CI [-4.4%, +4.4%]);
+  recovery_rate +6.5pp with a CI crossing zero (3 genuine recoveries in 100
+  governor runs, all triggered by real failures — zero false-negative
+  churn). Significant deltas remain cost-side but shrank sharply after the
+  fix: 1.4× tokens-per-solved (was 3.1×) and 1.5× wall-clock (was 3.2×).
+  Plain reading: on single-shot BIRD SQL, retry-with-reflection rarely
+  converts a semantically wrong query into a right one — the governor's
+  measured value on this corpus is bounded by how rarely first attempts
+  fail loudly, and that is now stated with calibrated instrumentation
+  instead of hidden behind evaluator noise.
 
 ---
 
@@ -163,7 +180,7 @@ to make a number look better are visible as such.
 
 > **Early descriptive snapshot — pre-dates the pre-registered eval above.**
 > Kept for transparency; do not read as a headline claim. The pre-registered
-> Phase 1 numbers ([`docs/eval/PHASE1_BIRD_ABLATION.md`](docs/eval/PHASE1_BIRD_ABLATION.md))
+> Phase 1 run-2 numbers ([`docs/eval/PHASE1_BIRD_ABLATION_R2.md`](docs/eval/PHASE1_BIRD_ABLATION_R2.md))
 > are the load-bearing comparison.
 
 One run of the curated 10-case suite against `deepseek-v4-pro`, no mocks
