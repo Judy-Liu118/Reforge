@@ -34,9 +34,12 @@ naive while-retry on `exit_code != 0`. On task-intent-driven failures
 request by IntentStage — not inferred from runtime execution history) and
 watchdog timeouts the governor issues an immediate STOP instead of burning
 the budget. Outside those two
-paths the governor and a naive baseline retry to the same budget; the
-honest claim is **better recovery quality**, not generic
-unrecoverability recognition (see [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
+paths the governor and a naive baseline retry to the same budget — and
+whether that buys better outcomes is a **measured question, not a slogan**:
+the pre-registered BIRD ablation below returned an honest null on
+success_rate (the mechanism's value concentrates where first attempts fail
+*loudly*), and generic unrecoverability recognition remains an open
+limitation ([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
 Every decision lands on an append-only event log, so any run can be replayed
 and audited after the fact.
 
@@ -77,7 +80,9 @@ With it on, the failure is classified, the retry prompt carries a repair hint
 recalled by failure fingerprint, and the whole run is replayable from the
 event log. (Reflection-based root-cause context is part of the base loop and
 stays on in both arms — the toggle isolates the decision layer + recall, not
-every use of memory.)
+every use of memory.) That is the *mechanism* contrast; what it measurably
+buys is reported in [Evaluation methodology](#evaluation-methodology) below,
+including where it buys nothing.
 
 The toggle is a real env flag, not a slogan:
 
@@ -86,7 +91,8 @@ The toggle is a real env flag, not a slogan:
 reforge "read sales.csv, calc revenue mean"
 
 # Off — naive while-retry baseline (exit_code != 0 → RETRY, else ACCEPT)
-$env:REFORGE_GOVERNOR_BYPASS="1"; reforge "read sales.csv, calc revenue mean"
+REFORGE_GOVERNOR_BYPASS=1 reforge "read sales.csv, calc revenue mean"
+# PowerShell: $env:REFORGE_GOVERNOR_BYPASS="1"; reforge "read sales.csv, calc revenue mean"
 ```
 
 Same model, same task, same sandbox — only the decision layer changes. See
@@ -115,16 +121,29 @@ products.
 
 ## Evaluation methodology
 
-The honest read on whether the runtime layer actually changes outcomes lives
-in `docs/eval/`. The methodology is pre-registered — metrics, paired-delta
-formulas, sentinel rules for missing token usage, and the significance
-decision rule are all locked **before** any real-data run, so post-hoc edits
-to make a number look better are visible as such.
+**TL;DR** — two pre-registered runs on a locked BIRD SQL corpus (2 × 200
+runs, real LLM, paired per-seed CIs): the governor **does not move
+success_rate** (61.0% vs 61.0%, Δ 95% CI [-4.4, +4.4]pp) and costs 1.4×
+tokens-per-solved. Along the way, the pre-registered sensitivity appendix
+caught the internal evaluator systematically rejecting correct answers
+(run 1), the fix was validated on held-out data (FN 42.7% → 0.0%), and a
+full re-run confirmed the null is real. Plain reading: retry-with-reflection
+pays off where first attempts fail *loudly* (timeouts, tracebacks — see
+Phase 0), not where a wrong answer exits cleanly. The deliverable here is a
+calibrated boundary, not a victory lap.
+
+The full record lives in `docs/eval/`. The methodology is pre-registered —
+metrics, paired-delta formulas, sentinel rules for missing token usage, and
+the significance decision rule are all locked **before** any real-data run,
+so post-hoc edits to make a number look better are visible as such.
 
 - [`docs/eval/PHASE0_METRICS.md`](docs/eval/PHASE0_METRICS.md) —
-  pre-registration record (v4, signed off). Headline claim narrowed to a
-  single pillar: **governor improves recovery quality on recoverable
-  failures** (recovery rate, attempts on solved, tokens per solved). Tier B
+  pre-registration record (v4, signed off). The pre-registered hypothesis
+  was narrowed to a single pillar — *governor improves recovery quality on
+  recoverable failures* (recovery rate, attempts on solved, tokens per
+  solved) — and Phase 1 run 2 subsequently returned **null** on it; the
+  pre-registration stands as written because hypotheses don't get edited
+  after the data. Tier B
   metrics (deliberate-STOP precision/recall, false-stop rate) are explicitly
   deferred because the governor has no history-based unrecoverability
   detector (see KNOWN_LIMITATIONS L3). Headline claims require the paired
@@ -242,7 +261,8 @@ Influence Score to disambiguate recall vs used).
 
 ```bash
 git clone https://github.com/Judy-Liu118/Reforge.git && cd Reforge
-python -m venv .venv && .venv\Scripts\activate     # Windows
+python -m venv .venv
+.venv\Scripts\activate      # Windows — macOS/Linux: source .venv/bin/activate
 pip install -e ".[test]"
 
 cp .env.example .env        # fill in your LLM key
@@ -254,7 +274,7 @@ reforge "read sales.csv, calculate revenue average"
 reforge --serve             # http://localhost:8080
 
 # Hardened sandbox (opt-in): python:3.11-slim, --network=none, mem/cpu/pids limits
-$env:REFORGE_SANDBOX_BACKEND="docker"   # PowerShell
+$env:REFORGE_SANDBOX_BACKEND="docker"   # PowerShell — bash: export REFORGE_SANDBOX_BACKEND=docker
 reforge "..."
 ```
 
@@ -327,7 +347,7 @@ reforge/
 | Metric | Value |
 |---|---|
 | Tests | green on CI — see badge above |
-| Largest source file | 463 lines (no god-files) |
+| Largest source file | 436 lines (no god-files) |
 | Memory backends | 2 (JSON, SQLite) behind one Protocol |
 | MCP transport | hand-rolled stdio JSON-RPC (no SDK) |
 | Sandbox backends | 2 (subprocess, Docker) behind one Protocol |
