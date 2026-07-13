@@ -38,8 +38,13 @@ paths the governor and a naive baseline retry to the same budget — and
 whether that buys better outcomes is a **measured question, not a slogan**:
 the pre-registered BIRD ablation below returned an honest null on
 success_rate (the mechanism's value concentrates where first attempts fail
-*loudly*), and generic unrecoverability recognition remains an open
-limitation ([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
+*loudly*). Unrecoverability recognition now covers the repeated-identical-failure
+case — two consecutive attempts with the same structural fingerprint trigger a
+deliberate STOP (`repeated_failure_signature`) instead of burning the rest of
+the budget. That detector landed *after* the Phase 1 runs, so the ablation
+numbers below measure the runtime without it; generic unrecoverability
+recognition beyond that case remains open
+([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
 Every decision lands on an append-only event log, so any run can be replayed
 and audited after the fact.
 
@@ -144,9 +149,11 @@ so post-hoc edits to make a number look better are visible as such.
   solved) — and Phase 1 run 2 subsequently returned **null** on it; the
   pre-registration stands as written because hypotheses don't get edited
   after the data. Tier B
-  metrics (deliberate-STOP precision/recall, false-stop rate) are explicitly
-  deferred because the governor has no history-based unrecoverability
-  detector (see KNOWN_LIMITATIONS L3). Headline claims require the paired
+  metrics (deliberate-STOP precision/recall, false-stop rate) were explicitly
+  deferred because the governor had no history-based unrecoverability
+  detector at pre-registration time; the repeated-signature detector landed
+  post-Phase-1 and un-deferring Tier B would require a fresh run against the
+  changed system (see KNOWN_LIMITATIONS L3). Headline claims require the paired
   95% CI to not cross zero; "consistent with noise" deltas can appear in
   tables but never in headline copy.
 - [`docs/eval/PHASE0_CORPUS.md`](docs/eval/PHASE0_CORPUS.md) — locked

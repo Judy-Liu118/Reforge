@@ -74,6 +74,21 @@ versions track the `pyproject.toml` `[project] version`.
   that call it
 
 ### Added
+- **L3 repeated-signature deliberate STOP (history-based unrecoverability,
+  narrowed)** — the reflection node now appends each failed attempt's
+  structural fingerprint to `semantic_state.failure_signature_history`;
+  when 2 consecutive attempts share one identical fingerprint (same error
+  class AND same target module/key/file/name, parsed deterministically from
+  the traceback — not from LLM reflection text), `ClassifyStage` flips the
+  classification to `failure_mode="repeated_signature"` and the governor
+  issues a deliberate STOP (`repeated_failure_signature`) with budget
+  remaining. The outcome resolver reports it as its own event instead of
+  mislabeling it `RETRIES_EXHAUSTED`. Expected-failure intents
+  (`RECOVERABLE_DEMO`) are exempt; the naive bypass arm is untouched.
+  Landed **after** the Phase 1 runs — R1/R2 numbers measure the runtime
+  without it, and any cost-savings claim requires a fresh run
+  (`docs/KNOWN_LIMITATIONS.md` L3 status update). Validated by unit +
+  integration tests only (`reforge/tests/test_repeated_signature_stop.py`).
 - **Phase 1 BIRD ablation run 2 — post-calibration, the load-bearing
   result** (`docs/eval/PHASE1_BIRD_ABLATION_R2.md`, raw records in
   `docs/eval/phase1_records_r2.jsonl`; same locked corpus/protocol as run 1).

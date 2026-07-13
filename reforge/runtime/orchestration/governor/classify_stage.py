@@ -12,6 +12,25 @@ from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore
 # before we inject a pattern-warning into the retry hint.
 _PATTERN_THRESHOLD = 2
 
+# Consecutive attempts within THIS session that must share an identical
+# structural fingerprint before the run is declared unrecoverable (L3).
+# With the default budget of max_retries=2 (3 attempts total), 2 is the
+# only value that fires before budget exhaustion — it trades the third
+# attempt away when the second failed exactly like the first.
+_REPEAT_SIGNATURE_THRESHOLD = 2
+
+
+def _is_repeated_signature(history: list[dict]) -> bool:
+    """True when the last _REPEAT_SIGNATURE_THRESHOLD failures share one
+    non-empty structural fingerprint (full-dict equality — same error class
+    AND same target module/key/file/name, not just the same exception type)."""
+    if len(history) < _REPEAT_SIGNATURE_THRESHOLD:
+        return False
+    recent = history[-_REPEAT_SIGNATURE_THRESHOLD:]
+    if not recent[0].get("error_class"):
+        return False
+    return all(sig == recent[0] for sig in recent[1:])
+
 
 class ClassifyStage:
     """Stage 3: Classify failure + recall similar past experiences.
@@ -35,6 +54,26 @@ class ClassifyStage:
             execution=execution_output,
             evaluation=evaluation_result,
         )
+
+        # History-based unrecoverability (L3): the same structural fingerprint
+        # on consecutive attempts means retrying is burning budget on a failure
+        # the codegen cannot route around — flip to a deliberate STOP before
+        # the limit. Expected failures are exempt: RECOVERABLE_DEMO's stated
+        # intent is that the failure IS recoverable, which this signal cannot
+        # overrule.
+        if (
+            ctx.classification.retryable
+            and not ctx.classification.is_expected_failure
+            and _is_repeated_signature(ctx.state.semantic_state.failure_signature_history)
+        ):
+            ctx.classification = ctx.classification.model_copy(
+                update={
+                    "retryable": False,
+                    "failure_mode": "repeated_signature",
+                    "severity": "high",
+                }
+            )
+            return ctx
 
         # Recall past repairs for this failure mode → forwarded as repair_hint,
         # NOT outcome_reason (which PolicyStage owns and will overwrite).

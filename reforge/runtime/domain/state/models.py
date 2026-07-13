@@ -181,6 +181,11 @@ class SemanticState(BaseModel):
     # produced no hint, so a stale hint never leaks into a later attempt.
     repair_hint: str | None = Field(default=None)
     last_failure: Optional[FailureSnapshot] = Field(default=None)
+    # Appended by the reflection node on every failed attempt (one signature
+    # per attempt, in order; never cleared). ClassifyStage reads the tail to
+    # detect the same structural failure recurring across consecutive
+    # attempts — the history-based unrecoverability detector (L3).
+    failure_signature_history: list[dict] = Field(default_factory=list)
 
 
 class OutcomeState(BaseModel):

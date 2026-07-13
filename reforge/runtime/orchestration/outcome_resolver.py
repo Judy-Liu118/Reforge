@@ -31,6 +31,7 @@ class RuntimeEvent(str, Enum):
     CLEAN_SUCCESS = "CLEAN_SUCCESS"
     RECOVERED_AFTER_RETRY = "RECOVERED_AFTER_RETRY"
     RETRIES_EXHAUSTED = "RETRIES_EXHAUSTED"
+    REPEATED_SIGNATURE_STOP = "REPEATED_SIGNATURE_STOP"
 
 
 # Default event → outcome mapping (before intent overrides)
@@ -42,6 +43,7 @@ _EVENT_OUTCOME_MAP: dict[RuntimeEvent, tuple[TaskOutcome, str]] = {
     RuntimeEvent.CLEAN_SUCCESS: (TaskOutcome.SUCCESS, "clean_execution"),
     RuntimeEvent.RECOVERED_AFTER_RETRY: (TaskOutcome.RECOVERED, "execution_recovered"),
     RuntimeEvent.RETRIES_EXHAUSTED: (TaskOutcome.FAILED, "retries_exhausted"),
+    RuntimeEvent.REPEATED_SIGNATURE_STOP: (TaskOutcome.FAILED, "repeated_failure_signature"),
 }
 
 # Intent-based overrides — some intents reinterpret the default outcome
@@ -69,10 +71,15 @@ def _classify_event(
     retry_count: int,
     eval_passed: bool,
     policy_action: str,
+    policy_reason: str = "",
 ) -> RuntimeEvent:
     """Map deterministic signals to a runtime event — no if-else chain on task_intent."""
     if execution_exit_code == TIMEOUT_EXIT_CODE:
         return RuntimeEvent.EXECUTION_TIMEOUT
+    if policy_action == "STOP" and policy_reason == "repeated_failure_signature":
+        # Deliberate early STOP — budget was NOT exhausted; reporting it as
+        # RETRIES_EXHAUSTED would misstate why the run ended.
+        return RuntimeEvent.REPEATED_SIGNATURE_STOP
     if policy_action == "STOP" and execution_exit_code != 0:
         return RuntimeEvent.RETRIES_EXHAUSTED
     if not eval_passed and policy_action == "STOP":
@@ -93,6 +100,7 @@ def resolve_outcome(
     retry_count: int,
     eval_passed: bool = True,
     policy_action: str = "",
+    policy_reason: str = "",
 ) -> tuple[TaskOutcome, str]:
     """Resolve task outcome — event-driven with intent overrides.
 
@@ -100,7 +108,9 @@ def resolve_outcome(
     2. Look up default outcome
     3. Apply intent-specific override if present
     """
-    event = _classify_event(execution_exit_code, retry_count, eval_passed, policy_action)
+    event = _classify_event(
+        execution_exit_code, retry_count, eval_passed, policy_action, policy_reason
+    )
 
     if task_intent in _INTENT_OUTCOME_OVERRIDES:
         overrides = _INTENT_OUTCOME_OVERRIDES[task_intent]

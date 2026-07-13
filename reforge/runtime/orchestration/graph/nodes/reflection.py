@@ -46,6 +46,10 @@ def _failed_result(state: RuntimeState, reflection: ReflectionResult, traceback:
                 "reflection_summary": reflection.error_summary,
                 "reflection_result": reflection,
                 "last_failure": snapshot,
+                "failure_signature_history": [
+                    *state.semantic_state.failure_signature_history,
+                    snapshot.problem_signature,
+                ],
             }
         ),
     }

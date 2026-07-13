@@ -81,15 +81,22 @@ class TestRetryLoop:
         assert "42" in state.outcome_state.final_answer
 
     def test_retries_exhausted(self):
-        """Code always fails -> retries exhausted -> final answer contains error."""
+        """Every attempt fails DIFFERENTLY -> budget exhaustion is the stop.
+
+        Each attempt raises a distinct exception class so the L3
+        repeated-signature detector never fires and the run genuinely
+        walks the full retry budget.
+        """
         responses = [
             "1. Execute code",                        # planner
             "x = 1 / 0",                              # code_gen (attempt 1)
-            "ErrorType: ZeroDivisionError\nSummary: div by zero\nFix: remove",  # reflection 1
-            "x = 1 / 0",                              # code_gen (attempt 2)
-            "ErrorType: ZeroDivisionError\nSummary: div by zero\nFix: remove",  # reflection 2
-            "x = 1 / 0",                              # code_gen (attempt 3)
-            "ErrorType: ZeroDivisionError\nSummary: div by zero\nFix: remove",  # reflection 3
+            "ErrorType: ZeroDivisionError\nSummary: div by zero\nFix: remove",       # reflection 1
+            "import nonexistent_module_xyz_123",      # code_gen (attempt 2)
+            "ErrorType: ModuleNotFoundError\nSummary: missing module\nFix: drop it",  # reflection 2
+            "undefined_name_abc",                     # code_gen (attempt 3)
+            "ErrorType: NameError\nSummary: undefined name\nFix: define it",          # reflection 3
+            "{'a': 1}['b']",                          # code_gen (attempt 4)
+            "ErrorType: KeyError\nSummary: missing key\nFix: use 'a'",                # reflection 4
         ]
         factory = _make_llm_factory(responses)
 
@@ -101,6 +108,35 @@ class TestRetryLoop:
             state = runner.run("always fail")
 
         assert state.control_state.retry_count == 3
+        assert state.execution_output is not None
+        assert state.execution_output.exit_code != 0
+        assert "failed" in state.outcome_state.final_answer.lower()
+
+    def test_repeated_identical_failure_stops_early(self):
+        """Same structural fingerprint twice -> deliberate STOP before budget (L3).
+
+        The pre-L3 behavior was to burn the remaining budget re-attempting
+        a failure the codegen keeps reproducing; now the second identical
+        fingerprint ends the run with reason repeated_failure_signature.
+        """
+        responses = [
+            "1. Execute code",                        # planner
+            "x = 1 / 0",                              # code_gen (attempt 1)
+            "ErrorType: ZeroDivisionError\nSummary: div by zero\nFix: remove",  # reflection 1
+            "x = 1 / 0",                              # code_gen (attempt 2)
+            "ErrorType: ZeroDivisionError\nSummary: div by zero\nFix: remove",  # reflection 2
+        ]
+        factory = _make_llm_factory(responses)
+
+        with (
+            _patch_llm_nodes(factory),
+            patch("reforge.runtime.policy.task_intent.LLMClient", return_value=_INTENT_MOCK),
+        ):
+            runner = RuntimeRunner()
+            state = runner.run("always fail the same way")
+
+        assert state.control_state.retry_count == 1  # attempt 2 was the last
+        assert state.control_state.policy_reason == "repeated_failure_signature"
         assert state.execution_output is not None
         assert state.execution_output.exit_code != 0
         assert "failed" in state.outcome_state.final_answer.lower()

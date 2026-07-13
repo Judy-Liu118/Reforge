@@ -34,6 +34,12 @@ class RetryPolicy:
         if failure_mode == "timeout":
             return RuntimeDecision.stop(reason="timeout")
 
+        # ClassifyStage's history detector (L3): identical structural
+        # fingerprint on consecutive attempts — deliberate STOP with budget
+        # remaining rather than burning the rest of it on the same failure.
+        if failure_mode == "repeated_signature":
+            return RuntimeDecision.stop(reason="repeated_failure_signature")
+
         if retry_count >= max_retries:
             if execution and execution.exit_code != 0:
                 return RuntimeDecision.stop(reason="retry_limit_reached_with_error")

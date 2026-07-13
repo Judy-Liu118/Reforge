@@ -193,6 +193,47 @@ area, not a bug.
 
 ## L3. Deliberate STOP is intent-driven + timeout-driven, not history-derived
 
+### Status update (2026-07-13): the deferred fix has landed — narrowed to the repeated-identical-failure case
+
+The detector described under "Right fix" below shipped after the Phase 1
+BIRD ablation closed (post-R2), which is one of the two sanctioned landing
+windows ("before Phase 0, or after the eval"). What landed:
+
+- `ClassifyStage` flips a retryable classification to
+  `failure_mode="repeated_signature"` when the last 2 consecutive attempts
+  share one identical structural fingerprint
+  (`semantic_state.failure_signature_history`, appended per failed attempt
+  by the reflection node). The fingerprint is parsed deterministically from
+  the traceback (`extract_fingerprint`), NOT from the LLM reflection text —
+  the reflection node is merely where the append happens, so the
+  "reflection has no runtime authority" boundary holds; the only
+  LLM-influenced input is the `error_type` fallback used when a traceback
+  has no parseable error line. `RetryPolicy` turns that into a deliberate STOP
+  (`repeated_failure_signature`); the outcome resolver reports it as its
+  own event rather than mislabeling it `RETRIES_EXHAUSTED`.
+- Deviations from the sketch below, on purpose: **full-fingerprint equality**
+  instead of a per-exception-type counter (same error class AND same target
+  module/key/file/name — strictly higher precision than type-counting), and
+  **threshold 2, consecutive** instead of `N = 3` cumulative, because with
+  the default budget (`max_retry=3` → 4 attempts) a same-signature run
+  would exhaust budget before a cumulative count of 3+1 mattered, and the
+  saved attempts are the entire point. Expected-failure intents
+  (`RECOVERABLE_DEMO`) are exempt — a stated recoverable intent outranks
+  the history signal.
+- **The Phase 1 numbers (R1 + R2) measure the runtime WITHOUT this
+  detector.** Any claim about what it buys (attempts/tokens saved on
+  unsolved runs) requires a fresh run against the changed system; until
+  then the detector is validated by unit + integration tests only
+  (`reforge/tests/test_repeated_signature_stop.py`,
+  `test_retry_loop.py::test_repeated_identical_failure_stops_early`).
+- The precision caveat under "Why defer" is not closed, it is *disclosed*:
+  a repeated identical fingerprint CAN in principle still recover on a
+  later attempt. The threshold is a design choice, not a calibrated
+  parameter.
+
+The sections below are preserved as written for the historical record of
+why this was deferred through Phase 0/Phase 1.
+
 ### Symptom
 
 The governor's `RetryPolicy.decide()` (`reforge/runtime/policy/retry_policy.py:19-53`)

@@ -35,6 +35,7 @@ class PolicyStage:
             retry_count=ctx.state.control_state.retry_count,
             eval_passed=evaluation.passed if evaluation else True,
             policy_action=decision.action.value,
+            policy_reason=decision.reason,
         )
 
         ctx.policy.action = decision.action.value
