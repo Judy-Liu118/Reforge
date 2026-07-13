@@ -74,6 +74,25 @@ versions track the `pyproject.toml` `[project] version`.
   that call it
 
 ### Added
+- **Phase 1 BIRD ablation run 3 — with the L3 detector live, the record
+  for the shipped runtime** (`docs/eval/PHASE1_BIRD_ABLATION_R3.md`, raw
+  records in `docs/eval/phase1_records_r3.jsonl`; same locked
+  corpus/protocol, 200 runs at commit `bcc11fb`). The success_rate null
+  reproduced a third time (61.0% vs 62.0%, paired Δ 95% CI [-9.1, +7.1]pp)
+  and the sensitivity appendix is symmetric again (evaluator FN 0.0% both
+  arms). The L3 repeated-signature detector recorded **zero activations**:
+  30 of the governor arm's 31 retried attempts were quiet evaluator
+  rejections (exit 0, no traceback → no fingerprint history), only 1 was
+  loud, and no run had two consecutive loud failures — the only shape the
+  detector can act on. Cost deltas statistically consistent with run 2
+  (1.6× vs 1.4× tokens-per-solved, overlapping CIs). first_try_rate's
+  seed-level Δ (-5.0pp, CI [-9.4, -0.6]) nominally excludes zero but the
+  locked case-level robustness check does not and both arms share an
+  identical attempt-1 pipeline by construction — disclosed as seed-level
+  noise, kept out of headline claims. Net: the detector's value is
+  confined to loud-and-persistent failure workloads (Phase-0-style), and
+  KNOWN_LIMITATIONS L3 now records that boundary as measured, not
+  hypothesized.
 - **L3 repeated-signature deliberate STOP (history-based unrecoverability,
   narrowed)** — the reflection node now appends each failed attempt's
   structural fingerprint to `semantic_state.failure_signature_history`;

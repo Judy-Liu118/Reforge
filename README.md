@@ -41,9 +41,11 @@ success_rate (the mechanism's value concentrates where first attempts fail
 *loudly*). Unrecoverability recognition now covers the repeated-identical-failure
 case — two consecutive attempts with the same structural fingerprint trigger a
 deliberate STOP (`repeated_failure_signature`) instead of burning the rest of
-the budget. That detector landed *after* the Phase 1 runs, so the ablation
-numbers below measure the runtime without it; generic unrecoverability
-recognition beyond that case remains open
+the budget. That detector landed *after* the first two Phase 1 runs; a third
+full run with it live reproduced the null and measured the detector **dormant
+on this corpus** — BIRD retries are almost entirely quiet evaluator
+rejections, which carry no traceback for it to fingerprint. Generic
+unrecoverability recognition beyond the loud-and-persistent case remains open
 ([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
 Every decision lands on an append-only event log, so any run can be replayed
 and audited after the fact.
@@ -126,16 +128,18 @@ products.
 
 ## Evaluation methodology
 
-**TL;DR** — two pre-registered runs on a locked BIRD SQL corpus (2 × 200
+**TL;DR** — three pre-registered runs on a locked BIRD SQL corpus (3 × 200
 runs, real LLM, paired per-seed CIs): the governor **does not move
-success_rate** (61.0% vs 61.0%, Δ 95% CI [-4.4, +4.4]pp) and costs 1.4×
-tokens-per-solved. Along the way, the pre-registered sensitivity appendix
-caught the internal evaluator systematically rejecting correct answers
-(run 1), the fix was validated on held-out data (FN 42.7% → 0.0%), and a
-full re-run confirmed the null is real. Plain reading: retry-with-reflection
-pays off where first attempts fail *loudly* (timeouts, tracebacks — see
-Phase 0), not where a wrong answer exits cleanly. The deliverable here is a
-calibrated boundary, not a victory lap.
+success_rate** (run 2: 61.0% vs 61.0%, Δ 95% CI [-4.4, +4.4]pp; run 3:
+61.0% vs 62.0%, CI [-9.1, +7.1]pp) and costs 1.4–1.6× tokens-per-solved.
+Along the way, the pre-registered sensitivity appendix caught the internal
+evaluator systematically rejecting correct answers (run 1), the fix was
+validated on held-out data (FN 42.7% → 0.0%), a full re-run confirmed the
+null is real (run 2), and a final run with the post-eval repeated-signature
+detector live showed it never triggers on this workload (run 3). Plain
+reading: retry-with-reflection pays off where first attempts fail *loudly*
+(timeouts, tracebacks — see Phase 0), not where a wrong answer exits
+cleanly. The deliverable here is a calibrated boundary, not a victory lap.
 
 The full record lives in `docs/eval/`. The methodology is pre-registered —
 metrics, paired-delta formulas, sentinel rules for missing token usage, and
@@ -152,8 +156,9 @@ so post-hoc edits to make a number look better are visible as such.
   metrics (deliberate-STOP precision/recall, false-stop rate) were explicitly
   deferred because the governor had no history-based unrecoverability
   detector at pre-registration time; the repeated-signature detector landed
-  post-Phase-1 and un-deferring Tier B would require a fresh run against the
-  changed system (see KNOWN_LIMITATIONS L3). Headline claims require the paired
+  post-Phase-1, and the fresh run against the changed system (run 3) measured
+  **zero activations** on this corpus — Tier B is undefined-on-BIRD rather
+  than deferred (see KNOWN_LIMITATIONS L3). Headline claims require the paired
   95% CI to not cross zero; "consistent with noise" deltas can appear in
   tables but never in headline copy.
 - [`docs/eval/PHASE0_CORPUS.md`](docs/eval/PHASE0_CORPUS.md) — locked
@@ -185,8 +190,8 @@ so post-hoc edits to make a number look better are visible as such.
   re-scored — the evaluator drives runtime retry decisions, so only a fresh
   run measures the fixed system.
 - [`docs/eval/PHASE1_BIRD_ABLATION_R2.md`](docs/eval/PHASE1_BIRD_ABLATION_R2.md) —
-  Phase 1 **run 2** (2026-07-11, post-calibration — **the load-bearing
-  result**), same locked corpus and protocol. Sensitivity appendix:
+  Phase 1 **run 2** (2026-07-11, post-calibration — the load-bearing
+  result for the pre-L3 runtime), same locked corpus and protocol. Sensitivity appendix:
   evaluator FN 0.0% in both arms, **verdict symmetric** — headlines stand
   unqualified. **The null on the primary metric is real, not an artifact**:
   success_rate 61.0% vs 61.0% (paired Δ 95% CI [-4.4%, +4.4%]);
@@ -199,15 +204,30 @@ so post-hoc edits to make a number look better are visible as such.
   measured value on this corpus is bounded by how rarely first attempts
   fail loudly, and that is now stated with calibrated instrumentation
   instead of hidden behind evaluator noise.
-
----
-
-## Benchmark snapshot
+- [`docs/eval/PHASE1_BIRD_ABLATION_R3.md`](docs/eval/PHASE1_BIRD_ABLATION_R3.md) —
+  Phase 1 **run 3** (2026-07-13, with the L3 repeated-signature detector
+  live — **the record for the shipped runtime**), same locked corpus and
+  protocol. The null reproduced a third time: success_rate 61.0% vs 62.0%
+  (paired Δ 95% CI [-9.1, +7.1]pp); sensitivity appendix symmetric again
+  (evaluator FN 0.0% both arms). The detector itself recorded **zero
+  activations in 200 runs**, and the raw records say why: 30 of the
+  governor arm's 31 retried attempts were quiet evaluator rejections
+  (exit 0, no traceback — nothing for the fingerprint history to match),
+  and no run had two consecutive loud failures. So run 3's governor made
+  decision-for-decision the same choices the run-2 runtime would have, and
+  the cost deltas are statistically consistent with run 2 (1.6× vs 1.4×
+  tokens-per-solved, overlapping CIs). One honest wrinkle, disclosed rather
+  than buried: first_try_rate's seed-level Δ (-5.0pp, CI [-9.4, -0.6])
+  nominally excludes zero, but the locked case-level robustness check does
+  not ([-14.0, +4.0]), and both arms run an identical attempt-1 pipeline by
+  construction (the bypass flag only changes the retry decision), so we
+  read it as seed-level noise (df = 4), not a mechanism — it stays out of
+  headline claims.
 
 > **Early descriptive snapshot — pre-dates the pre-registered eval above.**
 > Kept for transparency; do not read as a headline claim. The pre-registered
-> Phase 1 run-2 numbers ([`docs/eval/PHASE1_BIRD_ABLATION_R2.md`](docs/eval/PHASE1_BIRD_ABLATION_R2.md))
-> are the load-bearing comparison.
+> Phase 1 run-3 numbers ([`docs/eval/PHASE1_BIRD_ABLATION_R3.md`](docs/eval/PHASE1_BIRD_ABLATION_R3.md))
+> are the load-bearing comparison for the shipped runtime.
 
 One run of the curated 10-case suite against `deepseek-v4-pro`, no mocks
 (`docs/benchmark_sample.md`). Reported as-is, including the cases where actual

@@ -220,12 +220,33 @@ windows ("before Phase 0, or after the eval"). What landed:
   saved attempts are the entire point. Expected-failure intents
   (`RECOVERABLE_DEMO`) are exempt — a stated recoverable intent outranks
   the history signal.
-- **The Phase 1 numbers (R1 + R2) measure the runtime WITHOUT this
-  detector.** Any claim about what it buys (attempts/tokens saved on
-  unsolved runs) requires a fresh run against the changed system; until
-  then the detector is validated by unit + integration tests only
-  (`reforge/tests/test_repeated_signature_stop.py`,
+- **The Phase 1 R1 + R2 numbers measure the runtime WITHOUT this
+  detector; run 3 (2026-07-13, `docs/eval/PHASE1_BIRD_ABLATION_R3.md`,
+  200 runs at commit `bcc11fb`) measures it live — and found it
+  dormant on this corpus: zero `repeated_failure_signature` STOPs.**
+  Attribution from the raw records (`phase1_records_r3.jsonl`): of the
+  31 retried attempts in the governor arm, 30 were *quiet* evaluator
+  rejections (exit 0, no traceback — nothing is appended to
+  `failure_signature_history`, so the detector is blind to them by
+  design) and only 1 was a loud failure; zero runs contained two
+  consecutive loud failures, which is the only shape the detector can
+  act on. Consequently R3's governor arm made decision-for-decision the
+  same choices the pre-L3 runtime would have made, the success_rate
+  null reproduced (61.0% vs 62.0%, paired Δ 95% CI [-9.1, +7.1]pp), and
+  the cost deltas are statistically consistent with R2 (tokens-per-solved
+  Δ CI [1,199, 4,215] vs R2's [1,001, 2,683]). The detector's value
+  proposition is therefore confined to workloads whose failures are
+  loud AND persistent (missing dependency loops, unreachable resources)
+  — Phase-0-style, not BIRD-style. Behavioral validation remains
+  unit + integration tests (`reforge/tests/test_repeated_signature_stop.py`,
   `test_retry_loop.py::test_repeated_identical_failure_stops_early`).
+- The quiet 4-attempt runs R3 did record (5 governor runs burned the
+  full budget on repeated evaluator rejections) are the eval-side
+  analogue the "Right fix" sketch mentions — detecting repeated
+  identical `evaluation_result.failure_type`. Deliberately NOT built:
+  the anti-pattern list below explains why repurposing eval-rejection
+  recurrence as an unrecoverability signal needs its own
+  precision study first.
 - The precision caveat under "Why defer" is not closed, it is *disclosed*:
   a repeated identical fingerprint CAN in principle still recover on a
   later attempt. The threshold is a design choice, not a calibrated
