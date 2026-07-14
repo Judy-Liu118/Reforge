@@ -4,6 +4,8 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+English | [简体中文](README.zh-CN.md)
+
 **An execution-reliability runtime for AI agents.** The retry decision is
 taken out of the model and into an explicit, typed, auditable runtime layer
 — so when a task fails in a recoverable way, the runtime classifies the
