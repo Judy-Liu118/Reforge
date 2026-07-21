@@ -865,15 +865,20 @@ Runner.
 ### Symptom
 
 `_score()` (`reforge/memory/execution_memory.py`) awards points per
-structural field independently — `error_class`, `error_type`,
-`root_cause`, `domain`, `failure_mode` each contribute their own
-weight regardless of the others. The specific-identity fields
-(`missing_key` / `missing_module` / `missing_file` / `undefined_name`)
-only contribute their weight on an exact string match; when the value
-differs, that one field's weight is simply omitted — every other
-structural field still matches, so the total score stays well above
-the `score > 0` inclusion threshold and the record is still recalled
-as the top hint. There is no embedding or semantic model anywhere in
+structural field independently — `error_class`, `root_cause`,
+`domain`, `failure_mode` each contribute their own weight regardless
+of the others. The specific-identity fields (`missing_key` /
+`missing_module` / `missing_file` / `undefined_name`) only contribute
+their weight on an exact string match; when the value differs, that one
+field's weight is simply omitted — every other structural field still
+matches, so the structural score stays comfortably positive and the
+record is still recalled as the top hint. Note the admission gate does
+*not* catch this: it requires a non-zero **structural** score
+specifically to keep text overlap from admitting records on function
+words alone, and here the structural score is genuinely non-zero —
+same error class, same root cause, same domain. Tightening the gate
+further is the deferred fix below, not something the existing gate
+does. There is no embedding or semantic model anywhere in
 the path (`reforge/memory/retrieval.py` docstring: "No embedding. No
 vector DB. Pure heuristic ranking.") — "similar problem" in this
 codebase means "same shape of failure," not "same or related

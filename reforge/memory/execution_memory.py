@@ -77,6 +77,13 @@ class ExecutionMemory:
 
         Uses weighted scoring instead of hard failure_mode filtering,
         so partial matches on problem_signature still surface useful records.
+
+        Admission requires a non-zero *structural* score — a shared
+        failure_mode or fingerprint field. Request-text overlap alone cannot
+        admit a record: every English request shares "the"/"and"/"print", so a
+        keyword-only threshold let an unrelated TimeoutError record ride into
+        the top-3 (and potentially into `records[0]`, which ClassifyStage
+        forwards as the repair_hint) on function words alone.
         """
         if not self._path.exists():
             return []
@@ -91,12 +98,36 @@ class ExecutionMemory:
                 if not line:
                     continue
                 rec = ExecutionRecord.model_validate_json(line)
-                score = _score(rec, query_words, failure_mode, sig)
-                if score > 0:
-                    results.append((score, rec))
+                structural, keyword = _score(rec, query_words, failure_mode, sig)
+                if structural > 0:
+                    results.append((structural + keyword, rec))
 
         results.sort(key=lambda x: x[0], reverse=True)
         return [r for _, r in results[:3]]
+
+
+# Upper bound on the request-text contribution. Deliberately below the
+# smallest single-field structural weight that can decide a ranking, so text
+# overlap acts as a tie-breaker between structurally comparable records and
+# can never reorder records that differ structurally.
+_KEYWORD_WEIGHT = 3.0
+
+
+def _keyword_score(query_words: set[str], rec_words: set[str]) -> float:
+    """Sørensen–Dice overlap of the two request texts, scaled to _KEYWORD_WEIGHT.
+
+    Normalised by the *combined* length rather than counted raw: a raw count
+    rewards verbosity, since a long request shares more function words with
+    everything. Dice divides the shared words by how much text was needed to
+    share them, so padding a request with filler lowers its score instead of
+    inflating it.
+    """
+    if not query_words or not rec_words:
+        return 0.0
+    shared = len(query_words & rec_words)
+    if not shared:
+        return 0.0
+    return 2.0 * shared / (len(query_words) + len(rec_words)) * _KEYWORD_WEIGHT
 
 
 def _score(
@@ -104,7 +135,13 @@ def _score(
     query_words: set[str],
     failure_mode: str,
     sig: dict,
-) -> float:
+) -> tuple[float, float]:
+    """Score *rec* against the query as (structural, keyword).
+
+    Kept separate because only the structural half is evidence that the stored
+    repair applies here; the keyword half is a tie-breaker. `recall_similar`
+    admits on structural alone and ranks on the sum.
+    """
     score = 0.0
     rec_sig = rec.problem_signature
 
@@ -136,8 +173,5 @@ def _score(
     if sig.get("domain") and sig["domain"] == rec_sig.get("domain"):
         score += 2.0
 
-    # Keyword overlap
-    rec_words = set(rec.request.lower().split())
-    score += len(query_words & rec_words) * 0.5
-
-    return score
+    keyword = _keyword_score(query_words, set(rec.request.lower().split()))
+    return score, keyword

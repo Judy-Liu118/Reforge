@@ -116,6 +116,60 @@ def test_recall_returns_repair_strategy(tmp_path: Path) -> None:
     assert results[0].repair_strategy == "Check column names first"
 
 
+def test_text_overlap_alone_does_not_admit_a_record(tmp_path: Path) -> None:
+    """Shared function words are not evidence that a stored repair applies.
+
+    Without a structural admission gate, a verbose unrelated record rides into
+    the top-3 on "the"/"and"/"of" alone — and ClassifyStage forwards
+    records[0] as the repair_hint.
+    """
+    mem = _mem(tmp_path)
+    mem.record(
+        request="Please read the input and print the result of each of the items in the list "
+                "and then print the summary of the report and each of the column totals",
+        outcome="RECOVERED",
+        failure_mode="timeout",
+        repair_strategy="JUNK — unrelated to any KeyError",
+        problem_signature={"error_class": "TimeoutError", "domain": "python",
+                           "root_cause": "timeout"},
+    )
+
+    results = mem.recall_similar(
+        "Read demo_orders.csv and print the order_id of each row.",
+        failure_mode="execution_error",
+        problem_signature={"error_class": "KeyError", "domain": "general",
+                           "root_cause": "missing_key", "missing_key": "order_id"},
+    )
+    assert results == []
+
+
+def test_verbose_request_does_not_outrank_a_concise_match(tmp_path: Path) -> None:
+    """Dice normalisation means padding a request lowers its score.
+
+    Both records match structurally; the concise one shares fewer words in
+    absolute terms but far more as a fraction of its text.
+    """
+    mem = _mem(tmp_path)
+    sig = {"error_class": "KeyError", "domain": "general", "root_cause": "missing_key"}
+    mem.record(
+        request="read the csv and print the sum and then print each of the rows and the totals "
+                "and the summary of the report and each of the column names in the table",
+        outcome="RECOVERED", failure_mode="execution_error",
+        repair_strategy="verbose", problem_signature=sig,
+    )
+    mem.record(
+        request="read demo.csv print the sum",
+        outcome="RECOVERED", failure_mode="execution_error",
+        repair_strategy="concise", problem_signature=sig,
+    )
+
+    results = mem.recall_similar(
+        "read demo.csv print the sum", failure_mode="execution_error",
+        problem_signature=sig,
+    )
+    assert results[0].repair_strategy == "concise"
+
+
 def test_persisted_error_type_alias_still_matches_on_error_class(tmp_path: Path) -> None:
     """Signatures written before the error_type alias was dropped stay recallable.
 

@@ -7,6 +7,27 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **Request-text overlap could admit and reorder recalls on function words
+  alone** — `ExecutionMemory.recall_similar()` admitted any record scoring
+  `> 0` and added an unbounded `0.5 × shared_word_count` to its rank. Both
+  halves were wrong. Admission: every English request shares
+  "the"/"and"/"of"/"print", so a record with *zero* structural overlap
+  entered the top-3 on function words — measured at 3.0 points for a
+  `TimeoutError` record against a `KeyError` query, enough to become
+  `records[0]`, which `ClassifyStage` forwards verbatim as the `repair_hint`.
+  Ranking: a raw shared-word count rewards verbosity, since longer text
+  shares more function words with everything; on the working tree's real
+  memory file, an unrelated `user_id` record outranked an unrelated
+  `revenue` record purely on `each`/`row.`, with identical structural scores.
+  Now: admission requires a non-zero **structural** score (a shared
+  `failure_mode` or fingerprint field), and text overlap is a
+  Sørensen–Dice coefficient scaled to a hard ceiling of 3.0 — below the
+  structural weights that decide rankings, so it breaks ties between
+  structurally comparable records instead of overriding them, and padding a
+  request now lowers its score. Does **not** address KNOWN_LIMITATIONS L8
+  (structurally identical, causally unrelated failures): those have a
+  genuinely non-zero structural score and still match — see L8's updated
+  Symptom section.
 - **Fingerprint scoring double-counted the exception class** —
   `FailureFingerprint.to_dict()` emitted `error_type` as a backward-compat
   alias of `error_class`, so the two keys were never independent: any record
