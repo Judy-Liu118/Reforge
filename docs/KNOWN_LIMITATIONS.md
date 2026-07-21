@@ -859,3 +859,92 @@ Runner.
   entry as the reason there is no equivalent CLI flag yet.
 
 ---
+
+## L8. `ExecutionMemory.recall_similar()` matches on failure *shape*, not identity — can inject a hint keyed to the wrong specific value
+
+### Symptom
+
+`_score()` (`reforge/memory/execution_memory.py`) awards points per
+structural field independently — `error_class`, `error_type`,
+`root_cause`, `domain`, `failure_mode` each contribute their own
+weight regardless of the others. The specific-identity fields
+(`missing_key` / `missing_module` / `missing_file` / `undefined_name`)
+only contribute their weight on an exact string match; when the value
+differs, that one field's weight is simply omitted — every other
+structural field still matches, so the total score stays well above
+the `score > 0` inclusion threshold and the record is still recalled
+as the top hint. There is no embedding or semantic model anywhere in
+the path (`reforge/memory/retrieval.py` docstring: "No embedding. No
+vector DB. Pure heuristic ranking.") — "similar problem" in this
+codebase means "same shape of failure," not "same or related
+underlying cause."
+
+Confirmed live (2026-07-21): a session seeded a `RECOVERED` record for
+`KeyError: 'user_id'` (repair: introspect and rename to the real CSV
+header). A later, unrelated session failing on `KeyError: 'order_id'`
+(a different CSV, different column, different task) recalled that
+same record — the retry prompt's `repair_hint` read `"...for uid in
+df['user_id_column']: print(uid)"`, naming a column that does not
+exist anywhere in the second task. Raw evidence in
+`runs/dc4cb32a/code.txt` (the seeding session) and
+`runs/3c9cc5ae/code.txt` (the mismatched recall, `[repair_hint used]`
+line visible in the persisted per-attempt code — see the `code.txt`
+persistence entry in `CHANGELOG.md`).
+
+### What actually prevents this from corrupting outcomes
+
+Not recall precision — codegen's treatment of `repair_hint` as loose
+prompt context, not a literal patch. In the confirmed case, the retry
+attempt's generated code discarded the hint's wrong specific detail
+(`user_id_column`) and kept only its general strategy (introspect
+`df.columns`, match adaptively), because the LLM is free to disregard
+any part of a hint. This is incidental safety, not designed safety: a
+differently-shaped mismatch, or a less careful codegen prompt, could
+propagate a wrong literal value straight into generated code.
+
+### Right fix (deferred)
+
+Require the specific identifying value(s) to match — exactly, or via
+a cheap normalization (case-fold, underscore/space-fold) — before
+crediting any score above the bare `error_class` match, or gate hint
+injection on a minimum score materially higher than what "same shape,
+different identity" alone produces.
+
+### Why defer
+
+- No measured evidence this changes outcomes. Real recovery rates are
+  already low (R2: 3/100 runs, Phase 1 BIRD: 5/100 runs); the
+  mitigating codegen behavior observed above means the failure mode
+  an identity gate would prevent (a corrupted retry from a bad literal
+  suggestion) has been shown to be *possible*, not shown to *occur*.
+- Tightening the match would also lose genuine cross-case value: two
+  failures with different specific missing keys but the same actual
+  root cause (e.g. a CSV loader assuming the wrong date format,
+  surfacing as different downstream `KeyError`s) currently share a
+  hint productively; an identity gate loses that pairing too.
+- Not on the eval measurement path — Phase 0/1/2 corpora were not
+  designed to probe recall precision specifically.
+
+### Trigger to revisit
+
+- A measured eval axis is designed to isolate recall precision (e.g.
+  paired cases with structurally-identical-but-causally-unrelated
+  failures) and shows the mismatch actually degrading retry outcomes,
+  not just producing an unused hint.
+- A corpus surfaces a codegen prompt style that follows hints more
+  literally, removing the incidental safety this entry currently
+  relies on.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Treating this as proof the memory system "doesn't work." The
+  confirmed case is simultaneously proof the `RECOVERED` write path
+  works end-to-end — wrong-detail recall and functioning recall are
+  not mutually exclusive; see the `code.txt` persistence entry in
+  `CHANGELOG.md` for the same evidence read the other way.
+- ❌ "Fixing" this by hardcoding a semantic mapping for common
+  identifier variants (`user_id`/`uid`, `order_id`/`oid`, etc.). That
+  is a special case dressed as a fix, and quietly encodes assumptions
+  a different corpus won't hold.
+
+---

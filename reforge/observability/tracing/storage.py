@@ -27,6 +27,51 @@ def save_trace(collector: TraceCollector) -> Path:
     return trace_path
 
 
+def save_code(session_id: str, code_by_attempt: list[tuple[str, str]]) -> Path | None:
+    """Persist full generated code per attempt to runs/{session_id}/code.txt.
+
+    CLI display truncates long code for readability; this keeps the exact
+    source text (untruncated) findable by session_id alongside trace.json.
+
+    Each entry is (code, repair_hint) — repair_hint is whatever
+    semantic_state.repair_hint held when that attempt's code was generated
+    (empty on attempt 1, or whenever ClassifyStage's recall came up empty).
+    Recording it here makes the governor's memory-recall path directly
+    observable instead of inferred from code similarity after the fact.
+    """
+    if not code_by_attempt:
+        return None
+
+    session_dir = _RUNS_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    code_path = session_dir / "code.txt"
+    parts = []
+    for i, (code, repair_hint) in enumerate(code_by_attempt, start=1):
+        header = f"{'=' * 60}\nAttempt {i}\n{'=' * 60}\n"
+        if repair_hint:
+            header += f"[repair_hint used]: {repair_hint}\n{'-' * 60}\n"
+        parts.append(f"{header}{code}\n")
+    code_path.write_text("\n".join(parts), encoding="utf-8")
+    return code_path
+
+
+def load_code(session_id: str) -> str | None:
+    """Load the saved full code text by session_id (supports prefix match)."""
+    if not _RUNS_DIR.exists():
+        return None
+
+    for session_dir in _RUNS_DIR.iterdir():
+        if not session_dir.is_dir():
+            continue
+        if session_dir.name.startswith(session_id):
+            code_path = session_dir / "code.txt"
+            if code_path.exists():
+                return code_path.read_text(encoding="utf-8")
+            return None
+    return None
+
+
 def load_trace(session_id: str) -> dict | None:
     """Load a saved trace by session_id (supports prefix match)."""
     if not _RUNS_DIR.exists():

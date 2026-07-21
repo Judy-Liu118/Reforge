@@ -91,7 +91,12 @@ event log. (Reflection-based root-cause context is part of the base loop and
 stays on in both arms — the toggle isolates the decision layer + recall, not
 every use of memory.) That is the *mechanism* contrast; what it measurably
 buys is reported in [Evaluation methodology](#evaluation-methodology) below,
-including where it buys nothing.
+including where it buys nothing. The recall itself is pure structural-fingerprint
+scoring, not semantic — it can hand two causally unrelated failures of the
+same *shape* the same hint (confirmed live: see
+[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L8); what keeps
+that from corrupting a retry is codegen treating the hint as a suggestion,
+not a patch.
 
 The toggle is a real env flag, not a slogan:
 

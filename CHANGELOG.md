@@ -74,6 +74,28 @@ versions track the `pyproject.toml` `[project] version`.
   that call it
 
 ### Added
+- **`runs/{session_id}/code.txt` — untruncated per-attempt generated code +
+  the `repair_hint` that shaped it**. No prior persistence layer kept the
+  full source text: `trace.json` records only `code_len` (a char count),
+  `trajectories.jsonl` only a SHA1 hash (`generated_code_hash`, explicitly
+  not full code), and the CLI's live `[Code]` display truncates long
+  generations for terminal readability. `save_code()`
+  (`observability/tracing/storage.py`) now writes the complete code per
+  attempt to `runs/{session_id}/code.txt`, prefixed with `[repair_hint
+  used]: ...` whenever `semantic_state.repair_hint` was non-empty at
+  generation time — makes the governor's memory-recall path directly
+  observable (grep the file) instead of inferred from output similarity
+  after the fact. Confirmed live: a session seeded with a `KeyError:
+  'user_id'` repair recalled that repair's text verbatim into an unrelated
+  `KeyError: 'order_id'` session's retry prompt — `ExecutionMemory.recall_similar()`
+  scores on structural fingerprint fields (error_class, root_cause, domain,
+  failure_mode) with no exact-match requirement on the specific missing
+  key, so two different missing keys of the same shape score as similar.
+  Codegen took the hint's general strategy ("introspect columns, adapt")
+  and discarded its wrong specific detail (the literal wrong column name),
+  which is what kept the mismatch from corrupting the retry — a property of
+  LLM-driven codegen treating recall as a suggestion, not a patch, not of
+  the recall being precise.
 - **Phase 1 BIRD ablation run 3 — with the L3 detector live, the record
   for the shipped runtime** (`docs/eval/PHASE1_BIRD_ABLATION_R3.md`, raw
   records in `docs/eval/phase1_records_r3.jsonl`; same locked

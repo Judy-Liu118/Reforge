@@ -21,7 +21,7 @@ from reforge.cli.progress import ProgressPrinter
 from reforge.cli.research import is_research_question, run_research
 from reforge.memory.sqlite_substrate import SqliteMemorySubstrate
 from reforge.memory.writer import record_from_final_state
-from reforge.observability.tracing.storage import save_trace
+from reforge.observability.tracing.storage import save_code, save_trace
 from reforge.runtime.orchestration.decomposition import TaskDecomposer
 from reforge.runtime.orchestration.decomposition.models import DecompositionResult, SubtaskResult
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
@@ -175,6 +175,7 @@ def run_task(
     print()
 
     state = None
+    code_by_attempt: list[tuple[str, str]] = []
     for node_name, state in runner.stream(user_request):
         line = format_node(node_name, state)
         if line:
@@ -183,6 +184,7 @@ def run_task(
         if tb and node_name == "execution":
             print(tb)
         if node_name == "code_generation":
+            code_by_attempt.append((state.generated_code, state.semantic_state.repair_hint or ""))
             code = format_code(state)
             if code:
                 print(code)
@@ -201,6 +203,7 @@ def run_task(
 
     if runner.collector:
         save_trace(runner.collector)
+    save_code(sid, code_by_attempt)
 
     # Memory write-back is handled by the runner automatically.
     # Derive the tag for display from the same helper (no duplicate write).
@@ -211,7 +214,8 @@ def run_task(
         else "  [memory: skipped]"
     )
 
-    print(f"  [saved: {sid}]  [trace: runs/{sid}/trace.json]{mem_tag}")
+    code_tag = f"  [code: runs/{sid}/code.txt]" if code_by_attempt else ""
+    print(f"  [saved: {sid}]  [trace: runs/{sid}/trace.json]{code_tag}{mem_tag}")
 
 
 def handle_list() -> None:
