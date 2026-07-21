@@ -30,12 +30,20 @@ class FailureFingerprint(BaseModel):
     def to_dict(self) -> dict:
         """Serialise to the problem_signature dict compatible with MemoryRecord scoring.
 
-        Includes backward-compat keys (error_type, root_cause, domain) so existing
-        scoring code continues to work alongside new structured keys.
+        Derives `root_cause` and `domain` alongside the raw parsed fields so
+        scoring can match on structure, not just on the exception class name.
+
+        No `error_type` key: it used to be written here as an alias of
+        `error_class`, which made every scorer that weighted both fields
+        double-count a single signal. Signatures persisted before that removal
+        still carry the key — scorers ignore unknown keys, and those records
+        keep matching on `error_class`, which was always written alongside it.
+        (`TrajectoryRecord.problem_signature` is a *different* signature built
+        by `trajectory/models.py::_build_signature`, where `error_type` is the
+        only error-class signal and is still load-bearing.)
         """
         d: dict = {
             "error_class": self.error_class,
-            "error_type": self.error_class,    # backward compat alias
             "execution_phase": self.execution_phase,
             "domain": self.domain,
             "root_cause": _root_cause_from_class(self.error_class),

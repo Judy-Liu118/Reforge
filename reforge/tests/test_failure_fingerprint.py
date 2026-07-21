@@ -172,14 +172,20 @@ class TestFingerprintExtraction:
         assert fp.error_class == ""
         assert fp.to_dict()["domain"] == ""  # graceful, not raises
 
-    def test_to_dict_has_backward_compat_keys(self) -> None:
+    def test_to_dict_has_derived_keys(self) -> None:
         fp = extract_fingerprint(_TB_IMPORT)
         d = fp.to_dict()
-        assert "error_type" in d       # backward compat alias
         assert "root_cause" in d
         assert "domain" in d
         assert d["missing_module"] == "pandas"
         assert d["root_cause"] == "missing_import"
+
+    def test_to_dict_omits_error_type_alias(self) -> None:
+        """error_type was an alias of error_class; emitting both made every
+        scorer that weighted the two fields double-count one signal."""
+        d = extract_fingerprint(_TB_IMPORT).to_dict()
+        assert "error_type" not in d
+        assert d["error_class"] == "ModuleNotFoundError"
 
     def test_to_dict_key_error(self) -> None:
         fp = extract_fingerprint(_TB_KEY)

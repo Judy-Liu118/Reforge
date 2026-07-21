@@ -138,9 +138,11 @@ class MemoryRetriever:
 
 # Field weights — higher = more specific. A shared `missing_module` is
 # stronger evidence that the same repair will apply than a shared `domain`.
+# No "error_type": FailureFingerprint.to_dict() used to emit it as an alias of
+# error_class, so weighting both scored one signal twice (10.0 for a single
+# exception-class match, outweighing every specific-identity field).
 _SIGNATURE_WEIGHTS: tuple[tuple[str, float], ...] = (
     ("error_class",    5.0),
-    ("error_type",     5.0),  # legacy field name
     ("missing_module", 5.0),
     ("missing_key",    4.0),
     ("missing_file",   4.0),

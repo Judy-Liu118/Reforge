@@ -114,10 +114,11 @@ def _score(
     elif failure_mode and (failure_mode in rec.failure_mode or rec.failure_mode in failure_mode):
         score += 2.0
 
-    # Structured fingerprint exact matches (highest precision)
+    # Structured fingerprint exact matches (highest precision).
+    # No "error_type" entry: FailureFingerprint.to_dict() used to emit it as an
+    # alias of error_class, so weighting both scored one signal twice.
     _pairs = [
         ("error_class", 4.0),
-        ("error_type", 3.0),
         ("missing_module", 5.0),
         ("missing_key", 4.0),
         ("missing_file", 3.0),

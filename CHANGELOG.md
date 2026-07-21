@@ -7,6 +7,27 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **Fingerprint scoring double-counted the exception class** —
+  `FailureFingerprint.to_dict()` emitted `error_type` as a backward-compat
+  alias of `error_class`, so the two keys were never independent: any record
+  matching on one matched on the other by construction. Both scorers that
+  weight signature fields listed both keys, so a single exception-class match
+  silently scored 7.0 in `ExecutionMemory._score` (4.0 + 3.0) and 10.0 in
+  `retrieval._SIGNATURE_WEIGHTS` (5.0 + 5.0) — outweighing every
+  specific-identity field (`missing_key` 4.0, `missing_module` 5.0) that
+  actually distinguishes two failures of the same class. The alias and both
+  weight entries are removed; a shared exception class now scores once, and
+  specific-identity fields carry proportionally more of the ranking as the
+  "higher = more specific" comment always claimed. Signatures persisted
+  before this change keep the key and keep matching — `error_class` was
+  always written alongside it (regression test:
+  `test_persisted_error_type_alias_still_matches_on_error_class`, plus a live
+  check that the current signature shape still recalls all three legacy
+  records in the working tree's `execution_memory.jsonl`). Unrelated and
+  unchanged: `MemoryRecord.error_type` (a top-level field, SQLite-indexed,
+  backs `find_by_error`) and `TrajectoryRecord.problem_signature["error_type"]`
+  (a different signature built by `trajectory/models.py::_build_signature`,
+  where it is the only error-class signal).
 - **Evaluator false-negative pressure on contract-format output (L6 gating
   fix)** — `HeuristicEvaluator` penalized correct bare-scalar answers
   (`"5"`, `"-"`) via its length/digit plausibility checks even when the

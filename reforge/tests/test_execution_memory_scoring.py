@@ -116,6 +116,39 @@ def test_recall_returns_repair_strategy(tmp_path: Path) -> None:
     assert results[0].repair_strategy == "Check column names first"
 
 
+def test_persisted_error_type_alias_still_matches_on_error_class(tmp_path: Path) -> None:
+    """Signatures written before the error_type alias was dropped stay recallable.
+
+    Those records carry both keys; the scorer no longer weights error_type, but
+    error_class was always written alongside it, so the match survives.
+    """
+    mem = _mem(tmp_path)
+    mem.record(
+        request="read demo.csv and sum the revenue column",
+        outcome="RECOVERED",
+        failure_mode="execution_error",
+        repair_strategy="introspect df.columns first",
+        # Legacy shape: error_type present as an alias of error_class.
+        problem_signature={
+            "error_class": "KeyError", "error_type": "KeyError",
+            "domain": "pandas", "root_cause": "missing_key", "missing_key": "revenue",
+        },
+        error_type="KeyError",
+    )
+
+    # Query signature in the current shape — no error_type key at all.
+    results = mem.recall_similar(
+        "read demo.csv and sum the revenue column",
+        failure_mode="execution_error",
+        problem_signature={
+            "error_class": "KeyError", "domain": "pandas",
+            "root_cause": "missing_key", "missing_key": "revenue",
+        },
+    )
+    assert len(results) == 1
+    assert results[0].repair_strategy == "introspect df.columns first"
+
+
 def test_keyword_overlap_breaks_ties(tmp_path: Path) -> None:
     """When failure_mode matches both records, keyword overlap decides ordering."""
     mem = _mem(tmp_path)
