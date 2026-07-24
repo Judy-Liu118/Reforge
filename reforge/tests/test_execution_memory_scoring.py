@@ -12,6 +12,37 @@ def _mem(tmp_path: Path) -> ExecutionMemory:
     return ExecutionMemory(path=tmp_path / "exec_mem.jsonl")
 
 
+def test_empty_signature_falls_back_to_fingerprint(tmp_path: Path) -> None:
+    """`{}` means "no signature", same as None — both derive one from error_type.
+
+    Regression: the guard was `if sig is None`, but the production caller reads
+    FailureSnapshot.problem_signature (default_factory=dict), which is `{}` and
+    never None when reflection found no structural signal. Those records landed
+    signature-less and could then only be recalled on a failure_mode collision,
+    because admission requires a non-zero *structural* score.
+    """
+    mem = _mem(tmp_path)
+    mem.record(
+        request="load a module",
+        outcome="RECOVERED",
+        failure_mode="execution_error",
+        repair_strategy="pip install pandas",
+        problem_signature={},
+        error_type="ModuleNotFoundError",
+    )
+
+    # A query with a *different* failure_mode must still match structurally —
+    # only possible if the record carries a derived fingerprint, not `{}`.
+    results = mem.recall_similar(
+        "totally unrelated wording",
+        failure_mode="recoverable_intentional",
+        problem_signature={"error_class": "ModuleNotFoundError"},
+    )
+    assert len(results) == 1
+    assert results[0].problem_signature["error_class"] == "ModuleNotFoundError"
+    assert results[0].repair_strategy == "pip install pandas"
+
+
 def test_exact_failure_mode_match_scores_highest(tmp_path: Path) -> None:
     mem = _mem(tmp_path)
     mem.record(

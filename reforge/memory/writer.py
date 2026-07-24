@@ -71,18 +71,19 @@ def record_from_final_state(state: object, session_id: str) -> MemoryRecord | No
     )
 
 
-def execution_record_from_final_state(state: object) -> dict | None:
-    """Build ExecutionMemory.record() kwargs from a completed RuntimeState.
+def repair_record_from_final_state(state: object) -> dict | None:
+    """Build ExecutionMemory.record() kwargs for a *proven repair*.
 
     This is the write side of the governor's repair recall: ClassifyStage
     calls ExecutionMemory.recall_similar() with the current failure's
     fingerprint, so something has to persist (signature → repair that
-    worked) pairs. Only RECOVERED sessions qualify — a record without a
-    proven repair carries no hint value and would shadow useful records
-    in the top-3 recall window.
+    worked) pairs. Only RECOVERED sessions carrying a concrete fix qualify
+    — hence "repair record" rather than "execution record": a record
+    without a proven repair carries no hint value and would shadow useful
+    records in the top-3 recall window.
 
-    Returns None when the session doesn't qualify (no failure snapshot,
-    not recovered, or reflection produced no concrete fix).
+    Returns None (the common case) when the session doesn't qualify: no
+    failure snapshot, not recovered, or reflection produced no concrete fix.
     """
     ss = getattr(state, "semantic_state", None)
     os_ = getattr(state, "outcome_state", None)
@@ -102,6 +103,9 @@ def execution_record_from_final_state(state: object) -> dict | None:
         "retryable": True,
         "repair_strategy": suggested_fix,
         "task_intent": (ss.task_intent if ss else None) or "",
-        "problem_signature": getattr(snapshot, "problem_signature", {}) or {},
+        # May be {} when the reflection node had no structural signal;
+        # ExecutionMemory.record() treats that as "no signature" and
+        # derives a coarse fingerprint from error_type instead.
+        "problem_signature": getattr(snapshot, "problem_signature", {}),
         "error_type": getattr(snapshot, "error_type", ""),
     }

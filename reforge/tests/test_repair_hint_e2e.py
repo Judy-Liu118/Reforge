@@ -20,7 +20,7 @@ from contextlib import ExitStack
 from unittest.mock import Mock, patch
 
 from reforge.memory.execution_memory import ExecutionMemory
-from reforge.memory.writer import execution_record_from_final_state
+from reforge.memory.writer import repair_record_from_final_state
 from reforge.paths import execution_memory_path
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
 from reforge.runtime.orchestration.retry_context import RetryContextData, build_retry_prompt
@@ -128,13 +128,13 @@ class TestWriteSide:
             semantic_state=SemanticState(task_intent="NORMAL_EXECUTION", last_failure=snapshot),
             outcome_state=OutcomeState(task_outcome="RECOVERED"),
         )
-        kwargs = execution_record_from_final_state(recovered)
+        kwargs = repair_record_from_final_state(recovered)
         assert kwargs is not None and kwargs["repair_strategy"] == "use the actual column name"
 
         failed = recovered.model_copy(
             update={"outcome_state": OutcomeState(task_outcome="FAILED")}
         )
-        assert execution_record_from_final_state(failed) is None
+        assert repair_record_from_final_state(failed) is None
 
         no_fix = recovered.model_copy(
             update={
@@ -143,7 +143,7 @@ class TestWriteSide:
                 )
             }
         )
-        assert execution_record_from_final_state(no_fix) is None
+        assert repair_record_from_final_state(no_fix) is None
 
 
 class TestReadSide:

@@ -50,7 +50,11 @@ class ExecutionMemory:
         traceback: str = "",
     ) -> None:
         sig = problem_signature
-        if sig is None:
+        # An empty dict means the same thing as None here — the caller had no
+        # structural signal. Treating only None as absent let {} through and
+        # wrote signature-less records, which recall_similar's structural-match
+        # admission gate then refuses to surface.
+        if not sig:
             fp = extract_fingerprint(traceback, error_type)
             sig = fp.to_dict()
         rec = ExecutionRecord(

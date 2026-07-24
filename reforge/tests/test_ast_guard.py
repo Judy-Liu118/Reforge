@@ -28,8 +28,47 @@ class TestASTGuard:
 
     def test_detect_getattr_os_system(self):
         r = ASTGuard().analyze("import os\nf = getattr(os, 'system')\nf('rm -rf /')")
-        # getattr itself is flagged
+        # getattr resolving to a known-dangerous attribute is flagged
+        assert not r.allow
         assert any("getattr" in v for v in r.violations)
+
+    # --- getattr/vars false positives no longer fire on benign introspection ---
+
+    def test_getattr_constant_safe_attribute_is_allowed(self):
+        # `getattr(df, "shape")` is idiomatic pandas — resolves to a benign attr.
+        r = ASTGuard().analyze("import pandas as pd\ndf = pd.DataFrame()\nprint(getattr(df, 'shape'))")
+        assert r.allow, f"unexpected violations: {r.violations}"
+
+    def test_getattr_dynamic_attribute_name_is_allowed(self):
+        # `getattr(df, col)` with a variable column name can't be resolved
+        # statically and is far too common to flag.
+        r = ASTGuard().analyze("def f(df, col):\n    return getattr(df, col)")
+        assert r.allow, f"unexpected violations: {r.violations}"
+
+    def test_vars_and_locals_are_not_flagged(self):
+        r = ASTGuard().analyze("class C:\n    pass\nprint(vars(C()))\nprint(locals())")
+        assert r.allow, f"unexpected violations: {r.violations}"
+
+    # --- Aliased dangerous modules no longer slip past the attribute check ---
+
+    def test_aliased_os_system_is_detected(self):
+        """Regression: `import os as o` used to bind the alias `o`, and the
+        attribute check looked up `(o, system)` — never in the dangerous set —
+        so a one-line rename defeated the whole guard.
+        """
+        r = ASTGuard().analyze("import os as o\no.system('rm -rf /')")
+        assert not r.allow
+        assert any("os.system" in v for v in r.violations)
+
+    def test_aliased_getattr_os_system_is_detected(self):
+        r = ASTGuard().analyze("import os as o\ngetattr(o, 'system')('x')")
+        assert not r.allow
+        assert any("os.system" in v for v in r.violations)
+
+    def test_submodule_import_still_allows_bare_use(self):
+        # `import os.path` binds `os`; os.path.exists must stay allowed.
+        r = ASTGuard().analyze("import os.path\nprint(os.path.exists('x'))")
+        assert r.allow, f"unexpected violations: {r.violations}"
 
     # --- Bare imports of function-level-dangerous modules are allowed ---
 

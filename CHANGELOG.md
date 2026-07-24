@@ -7,6 +7,52 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **ASTGuard: aliased-import bypass, `getattr`/`vars` false positives, and a
+  misleading "Layer 2 enforcement" claim** — three independent issues in the
+  generated-code risk scanner.
+  - *Alias bypass:* the attribute check looked up `(node.value.id, attr)`
+    against `_DANGEROUS_ATTRS`, but `import os as o` binds the name `o`, so
+    `o.system(...)` resolved to `(o, "system")` — never in the set. A one-line
+    rename defeated the entire guard. `analyze` now builds an alias→module map
+    first (`_build_alias_map`) and normalises `o.system` back to `os.system`.
+  - *`getattr`/`vars` false positives:* `getattr`/`setattr`/`delattr`/`vars`/
+    `globals`/`locals` were in `_DANGEROUS_CALLS`, so `getattr(df, "shape")`
+    and `vars(obj)` — idiomatic pandas — were flagged, costing a retry cycle
+    for no security gain. `vars`/`globals`/`locals` are removed (harmless
+    without a follow-up `exec`, which is still banned); `getattr`/`setattr`/
+    `delattr` now flag only their statically resolvable dangerous form
+    (`getattr(os, "system")`), leaving non-constant names (`getattr(df, col)`)
+    alone. `_DANGEROUS_CALLS` is now `{eval, exec, compile, __import__}`.
+  - *Docstring:* ASTGuard's only production caller is `HeuristicEvaluator`,
+    which runs *after* the sandbox executes the code and turns violations into
+    a score penalty — it is not the "Layer 2 enforcement" gate the docstring
+    claimed. Corrected to describe it as post-hoc risk scoring; the real
+    pre-generation gate is Layer 1 (`SemanticSafetyGuard`), and the sandbox is
+    the real execution boundary. The `SyntaxError` branch stays fail-open
+    (correct for a scorer) but now carries a note that promotion to a gate
+    would require fail-closed.
+- **An empty `problem_signature` bypassed the fingerprint fallback** —
+  `ExecutionMemory.record()` only derived a fingerprint when
+  `problem_signature is None`, but its production caller reads
+  `FailureSnapshot.problem_signature`, a `default_factory=dict` field that is
+  never `None` and is `{}` whenever the reflection node found no structural
+  signal. Those calls wrote signature-less records, which the new
+  structural-match admission gate then refuses to surface — the record could
+  only ever be recalled on a `failure_mode` collision. The guard is now
+  `if not sig`, so `{}` and `None` mean the same thing and both fall back to
+  `extract_fingerprint(traceback, error_type)`. Coarse but sufficient: with no
+  traceback on `FailureSnapshot` the fallback yields `error_class` /
+  `execution_phase` / `domain` / `root_cause` and not the specific-identity
+  fields (`missing_key`, `missing_module`, `undefined_name`).
+
+### Changed
+- **`execution_record_from_final_state` → `repair_record_from_final_state`**
+  — the old name read as "persist an execution record" while the function
+  admits only RECOVERED sessions carrying a concrete `suggested_fix` and
+  returns `None` for everything else. "Repair record" matches the vocabulary
+  the rest of the loop already uses (`repair_hint`, `repair_strategy`, "repair
+  recall") and implies the precondition. Behaviour unchanged.
+
 - **Request-text overlap could admit and reorder recalls on function words
   alone** — `ExecutionMemory.recall_similar()` admitted any record scoring
   `> 0` and added an unbounded `0.5 × shared_word_count` to its rank. Both
@@ -82,7 +128,7 @@ versions track the `pyproject.toml` `[project] version`.
   - `RuntimeRunner` persists `(problem_signature → repair that worked)` to
     `ExecutionMemory` when a session ends RECOVERED — the store the governor
     recalls from finally has a production write path
-    (`memory/writer.py::execution_record_from_final_state`)
+    (`memory/writer.py::repair_record_from_final_state`)
   - `ClassifyStage` passes the current failure's fingerprint to
     `recall_similar`, activating the structural scoring weights
     (error_class / root_cause / domain) that previously never fired
