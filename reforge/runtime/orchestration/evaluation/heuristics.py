@@ -37,7 +37,6 @@ class HeuristicEvaluator:
         ("Permission denied",
          re.compile(r"\b[Pp]ermission denied\b")),
     ]
-    MIN_OUTPUT_LENGTH = 5
     MIN_DATA_OUTPUT_LENGTH = 20  # Data tasks need more than a one-word answer
 
     # Explicit output-format contract: the request pins the exact shape of
@@ -175,15 +174,18 @@ class HeuristicEvaluator:
                 detail=f"script exited with non-zero code {exit_code}",
             ))
 
-        # Check: output_not_empty. With an explicit output contract the
-        # short-output floor is suspended (a bare scalar can be the whole
-        # answer); genuinely empty stdout still fails.
-        min_output_length = 1 if has_output_contract else self.MIN_OUTPUT_LENGTH
-        has_output = len(stdout) >= min_output_length
+        # Check: output_not_empty — this is the ONLY check that catches a clean
+        # exit_code 0 with no stdout at all (every other output check carries an
+        # `and stdout` guard and skips empty output entirely). So it stays "is
+        # there any output", not "is there enough": a 1-char scalar can be the
+        # whole answer, and the short-output floor mis-fired on those (KNOWN
+        # LIMITATIONS L6). Length/quality is judged by output_contains_data and
+        # research_output_quality, which know what each task type should emit.
+        has_output = len(stdout) >= 1
         checks.append(EvalCheck(
             name="output_not_empty",
             passed=has_output,
-            detail=f"stdout has {len(stdout)} chars" if has_output else "stdout is empty or too short",
+            detail=f"stdout has {len(stdout)} chars" if has_output else "stdout is empty",
         ))
 
         # Checks: no_error_in_output + stderr_clean.

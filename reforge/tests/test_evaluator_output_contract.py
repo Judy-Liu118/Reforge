@@ -24,7 +24,6 @@ CONTRACT_REQUEST = (
     "Print nothing else (no headers, no preamble, no trailing summary). "
     "Question: How many members joined the count of clubs on average?"
 )
-FREEFORM_REQUEST = "Calculate the average count of members per club and explain."
 
 
 def _evaluate(stdout: str, *, user_request: str, exit_code: int = 0):
@@ -61,13 +60,21 @@ def test_contract_phrases_detected(phrase: str):
     assert result.passed, [c for c in result.checks if not c.passed]
 
 
+# --- new behavior: length no longer gates a non-empty freeform answer --------
+
+
+def test_short_freeform_output_no_longer_fails_on_length():
+    # output_not_empty now checks presence, not length: it is the only guard
+    # against a clean exit with no stdout, so it must not double as a
+    # short-output floor. A brief answer to a plain (non-data, non-research)
+    # task is no longer failed just for being short — length/quality is left to
+    # output_contains_data / research_output_quality, which know each task type.
+    result = _evaluate("ok\n", user_request="Reply with a short status word.")
+    assert result.passed, [c for c in result.checks if not c.passed]
+    assert all(c.passed for c in result.checks if c.name == "output_not_empty")
+
+
 # --- unchanged behavior everywhere else --------------------------------------
-
-
-def test_short_output_still_fails_without_contract():
-    result = _evaluate("ok\n", user_request=FREEFORM_REQUEST)
-    assert not result.passed
-    assert any(c.name == "output_not_empty" and not c.passed for c in result.checks)
 
 
 def test_empty_output_still_fails_under_contract():
