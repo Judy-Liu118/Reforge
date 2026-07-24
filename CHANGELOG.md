@@ -6,6 +6,24 @@ versions track the `pyproject.toml` `[project] version`.
 
 ## [Unreleased]
 
+### Changed
+- **`retry_drift`'s repeat window is now a named constant** —
+  `HeuristicEvaluator.DRIFT_REPEAT_THRESHOLD`, replacing three separate
+  literal `2`s (the length guard, the slice bound, and the count guard) that
+  all meant the same thing and could drift apart if edited individually. The
+  value and behaviour are unchanged. It documents its tie to ClassifyStage's
+  `_REPEAT_SIGNATURE_THRESHOLD` (the same window applied to the finer
+  structural fingerprint) and to the `max_retries=2` budget that makes 2 the
+  only value able to fire before the budget runs out.
+
+### Added
+- **`retry_drift` test coverage** (`test_evaluator_retry_drift.py`) — the
+  check previously had none. Pins the window boundaries, the
+  intentional-error exemption, the empty-`error_type` skip, and the fact that
+  a non-zero exit outranks drift in `failure_type` (so `retry_drift` surfaces
+  as a failure_type only on a clean exit). One test overrides the threshold in
+  a subclass to prove all three call sites read the constant.
+
 ### Fixed
 - **`suspicious_result` never matched `None`** — the lookup was
   case-sensitive against an all-lowercase `SUSPICIOUS_NUMERIC`, but Python
