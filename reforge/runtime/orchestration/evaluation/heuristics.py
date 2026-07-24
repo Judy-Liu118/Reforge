@@ -81,12 +81,6 @@ class HeuristicEvaluator:
         "故意生成.*错误", "故意.*异常",
     ]
 
-    # Anti-cheating: blanket-except detection
-    BLANKET_EXCEPT_RE = re.compile(
-        r"except\s*(?:Exception|BaseException)?\s*:\s*\n\s*(?:pass|return|continue|print\s*\()",
-        re.MULTILINE,
-    )
-
     # Swallowed-compare detection: the LLM captured a low similarity score
     # from compare_images and then printed a "Warning: ..." message instead
     # of raising. We see a SCORE: X.XX line in stdout plus a warning-style
@@ -223,14 +217,6 @@ class HeuristicEvaluator:
                     passed=False,
                     detail=f"Result '{stripped[:40]}' looks implausible for a statistical query",
                 ))
-
-        # Check: blanket_except_detected — anti-cheating / retry drift
-        if state.generated_code and self.BLANKET_EXCEPT_RE.search(state.generated_code):
-            checks.append(EvalCheck(
-                name="blanket_except_detected",
-                passed=False,
-                detail="Code contains bare 'except: pass' or similar silent error swallowing",
-            ))
 
         # Check: AST capability violations
         if state.generated_code:
@@ -456,7 +442,9 @@ class HeuristicEvaluator:
             return "must_fail_first_violated"
         if "unnecessary_exception_handling" in failed:
             return "unnecessary_exception_handling"
-        if "blanket_except_detected" in failed:
+        # Emitted by RetryIntegrityGuard now (was a standalone regex check).
+        # failure_type string is unchanged so feedback/trajectory keep matching.
+        if "integrity:blanket_swallow" in failed:
             return "blanket_except_detected"
         if "no_error_in_output" in failed:
             return "invalid_output"

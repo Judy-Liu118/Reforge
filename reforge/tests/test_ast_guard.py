@@ -1,6 +1,12 @@
 """Tests for ASTGuard and RetryIntegrityGuard."""
 
+from reforge.runtime.domain.state.models import (
+    ExecutionState,
+    RuntimeState,
+    SemanticState,
+)
 from reforge.runtime.orchestration.ast_guard import ASTGuard
+from reforge.runtime.orchestration.evaluation.heuristics import HeuristicEvaluator
 from reforge.runtime.orchestration.integrity_guard import RetryIntegrityGuard
 
 
@@ -155,3 +161,74 @@ class TestRetryIntegrityGuard:
             "import traceback\ntry:\n    risky()\nexcept:\n    traceback.print_exc()\n    print('all good')"
         )
         assert not r.clean
+
+    # --- unified detection: one issue per swallowing handler --------------------
+
+    def test_blanket_pass_yields_single_issue(self):
+        # Regression: `except: pass` used to trip a regex + an AST check here
+        # AND HeuristicEvaluator.BLANKET_EXCEPT_RE — three failed checks for one
+        # defect. The guard now emits exactly one.
+        r = RetryIntegrityGuard().check("try:\n    risky()\nexcept:\n    pass")
+        assert len(r.issues) == 1
+        assert r.issues[0].startswith("blanket_swallow")
+
+    def test_specific_error_empty_body_is_narrow_swallow(self):
+        # `except KeyError: pass` — missed by the broad-only checks, caught by
+        # the narrow branch.
+        r = RetryIntegrityGuard().check("try:\n    risky()\nexcept KeyError:\n    pass")
+        assert not r.clean
+        assert r.issues[0].startswith("narrow_swallow")
+
+    def test_specific_error_return_none_is_swallow(self):
+        r = RetryIntegrityGuard().check("try:\n    risky()\nexcept ValueError:\n    return None")
+        assert not r.clean
+
+    def test_specific_error_real_recovery_is_clean(self):
+        # Catching a specific error and returning a real fallback is legitimate.
+        r = RetryIntegrityGuard().check("try:\n    risky()\nexcept ValueError:\n    return default")
+        assert r.clean
+
+    def test_log_and_reraise_is_clean(self):
+        # print()/print_exc() FOLLOWED BY raise is log-and-reraise, not a
+        # swallow. The old first-line regexes false-positived here; judging the
+        # whole body clears it.
+        r = RetryIntegrityGuard().check(
+            "import traceback\n"
+            "try:\n    risky()\n"
+            "except Exception as e:\n    traceback.print_exc()\n    raise"
+        )
+        assert r.clean
+
+
+class TestIntegrityDedupInEvaluator:
+    """`except: pass` used to fail three checks in evaluate(); now exactly one,
+    and the blanket_except_detected failure_type is preserved for downstream
+    feedback / trajectory matching."""
+
+    @staticmethod
+    def _evaluate(code: str):
+        state = RuntimeState(
+            user_request="read the file and print the result",
+            generated_code=code,
+            exec_state=ExecutionState(stdout="result: 42", stderr="", exit_code=0),
+            semantic_state=SemanticState(),
+        )
+        return HeuristicEvaluator().evaluate(state)
+
+    def test_blanket_pass_produces_single_check_and_keeps_failure_type(self):
+        res = self._evaluate("try:\n    df = read()\nexcept:\n    pass\nprint('result: 42')\n")
+        swallow_fails = [
+            c for c in res.checks
+            if not c.passed and ("integrity" in c.name or c.name == "blanket_except_detected")
+        ]
+        assert len(swallow_fails) == 1
+        assert swallow_fails[0].name == "integrity:blanket_swallow"
+        assert res.failure_type == "blanket_except_detected"
+
+    def test_specific_error_pass_maps_to_incomplete_result(self):
+        res = self._evaluate(
+            "try:\n    df = read()\nexcept ValueError:\n    pass\nprint('result: 42')\n"
+        )
+        swallow_fails = [c for c in res.checks if not c.passed and "integrity" in c.name]
+        assert len(swallow_fails) == 1
+        assert res.failure_type == "incomplete_result"
