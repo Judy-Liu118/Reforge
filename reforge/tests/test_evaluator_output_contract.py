@@ -74,6 +74,40 @@ def test_short_freeform_output_no_longer_fails_on_length():
     assert all(c.passed for c in result.checks if c.name == "output_not_empty")
 
 
+# --- a zero result is a legitimate answer, not a suspicious one --------------
+
+ZERO_REQUEST = (
+    "What is the average net change across accounts? "
+    "Print nothing else, output only the number."
+)
+
+
+@pytest.mark.parametrize("stdout", ["0\n", "0.0\n", "0.00\n", "0.000\n", "0,000\n"])
+def test_zero_average_is_not_suspicious(stdout: str):
+    # An average/count of 0 is a real answer ("net change", "统计…差额"), and
+    # under an output contract stdout is exactly "0". Flagging it burned a
+    # retry that re-derived the same 0. Note 0.000 / 0,000 were never in
+    # SUSPICIOUS_NUMERIC — a separate float(...) == 0 branch caught them, so
+    # both had to go for the zero to actually pass.
+    result = _evaluate(stdout, user_request=ZERO_REQUEST)
+    assert result.passed, [c for c in result.checks if not c.passed]
+    assert all(c.name != "suspicious_result" for c in result.checks)
+
+
+def test_zero_count_in_chinese_stat_task_is_not_suspicious():
+    result = _evaluate("0\n", user_request="统计亏损账户的平均余额，只输出最终结果")
+    assert result.passed, [c for c in result.checks if not c.passed]
+
+
+@pytest.mark.parametrize("stdout", ["nan\n", "inf\n", "-inf\n"])
+def test_broken_computation_values_still_flagged(stdout: str):
+    # These can only come from an empty series / divide-by-zero — still a bug.
+    result = _evaluate(stdout, user_request=ZERO_REQUEST)
+    assert not result.passed
+    assert any(c.name == "suspicious_result" and not c.passed for c in result.checks)
+    assert result.failure_type == "suspicious_result"
+
+
 # --- unchanged behavior everywhere else --------------------------------------
 
 

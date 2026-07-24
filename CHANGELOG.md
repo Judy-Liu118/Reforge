@@ -7,6 +7,18 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **`suspicious_result` no longer fails a legitimate zero** — a result of `0`
+  was treated as evidence of a logic error, but "average net change",
+  "统计…差额" and every count-like question (the `统计` gate covers count) can
+  correctly be 0. Under an output contract stdout is then exactly `"0"` — the
+  most common shape in the SQL benchmark — so the check burned a retry that
+  re-derived the same 0 and still ended on a depressed score. Removing `"0"`,
+  `"0.0"`, `"0.00"` from `SUSPICIOUS_NUMERIC` alone changed nothing: a second
+  `float(stripped) == 0` branch caught every zero form independently
+  (including `0.000` / `0,000`, which were never in the set), so both had to
+  go. `nan` / `inf` / `-inf` / `none` / `null` stay — an empty series' mean or
+  a divide-by-zero is still a real bug. The `suspicious_result` feedback text
+  no longer tells the model that 0 is wrong.
 - **ASTGuard: aliased-import bypass, `getattr`/`vars` false positives, and a
   misleading "Layer 2 enforcement" claim** — three independent issues in the
   generated-code risk scanner.

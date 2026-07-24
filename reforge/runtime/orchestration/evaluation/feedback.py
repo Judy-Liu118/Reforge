@@ -28,8 +28,9 @@ _CHECK_TO_INSTRUCTION: dict[str, str] = {
         "Fix the traceback shown in stderr — the code must run without exceptions."
     ),
     "suspicious_result": (
-        "Your numeric result was 0, None, or NaN — this is likely a logic error. "
-        "Verify column names, data types, and calculation logic."
+        "Your result was NaN, inf, or None — the computation never produced a "
+        "real value. Verify column names, data types, and that the filter did "
+        "not leave an empty set. (A result of 0 is fine and is not flagged.)"
     ),
     "blanket_except_detected": (
         "Remove 'except: pass' or 'except Exception: pass' — "

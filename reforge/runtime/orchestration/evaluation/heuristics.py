@@ -55,8 +55,9 @@ class HeuristicEvaluator:
         re.IGNORECASE,
     )
 
-    # Patterns for detecting suspicious results
-    SUSPICIOUS_NUMERIC = {"0", "0.0", "0.00", "none", "null", "nan", "inf", "-inf"}
+    # Values that can only come from a broken computation. Zero is deliberately
+    # absent — see the suspicious_result check for why.
+    SUSPICIOUS_NUMERIC = {"none", "null", "nan", "inf", "-inf"}
 
     # Keywords that mark a request as data-oriented (output must contain structured data)
     DATA_TASK_KEYWORDS = [
@@ -205,13 +206,17 @@ class HeuristicEvaluator:
                     detail="stderr is clean" if stderr_clean else f"stderr: {stderr[:80]}",
                 ))
 
-        # Check: suspicious_result
+        # Check: suspicious_result — only values that a *broken* computation
+        # produces. Zero is not one of them: "average net change", "统计…差额"
+        # and every count-like question ("统计" covers count) can legitimately
+        # be 0, and under an output contract stdout is then exactly "0" — the
+        # highest-frequency shape in the SQL benchmark. Flagging it cost a
+        # retry that re-derived the same 0 and still ended with a depressed
+        # score. A genuinely empty/failed computation surfaces as nan (pandas'
+        # mean of an empty series) or inf (divide by zero); those stay.
         if "average" in state.user_request.lower() or "mean" in state.user_request.lower() or "统计" in state.user_request:
             stripped = stdout.strip()
-            if stripped in self.SUSPICIOUS_NUMERIC or (
-                stripped.replace(",", "").replace(".", "").isdigit()
-                and float(stripped.replace(",", "")) == 0
-            ):
+            if stripped in self.SUSPICIOUS_NUMERIC:
                 checks.append(EvalCheck(
                     name="suspicious_result",
                     passed=False,
