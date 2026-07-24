@@ -7,6 +7,12 @@ versions track the `pyproject.toml` `[project] version`.
 ## [Unreleased]
 
 ### Fixed
+- **`suspicious_result` never matched `None`** — the lookup was
+  case-sensitive against an all-lowercase `SUSPICIOUS_NUMERIC`, but Python
+  prints `None` capitalised, so the set's strongest entry (a function that
+  forgot to `return`) had not once fired in production; `nan`/`inf` matched
+  only because Python happens to print those lowercase. Now compares on
+  `.casefold()`.
 - **`suspicious_result` no longer fails a legitimate zero** — a result of `0`
   was treated as evidence of a logic error, but "average net change",
   "统计…差额" and every count-like question (the `统计` gate covers count) can

@@ -19,16 +19,31 @@ kind of task the user asked for:
 | `reforge/runtime/orchestration/evaluation/heuristics.py` | `INTENTIONAL_ERROR_PATTERNS`, `DATA_TASK_KEYWORDS`, `RESEARCH_VERIFY_KEYWORDS`, `SUSPICIOUS_NUMERIC` (request-gated) |
 | `reforge/models/prompts/directives.py` | `MUST_FAIL_FIRST_PATTERNS`, `EXPECTS_UNCAUGHT_PATTERNS` |
 
-Each list scans `state.user_request` with `re.search` against hand-
-curated Chinese + English phrases. Misses are inevitable — "make it
-fail on purpose" never matches `故意.*报错`; `0.85` printed by a
-"don't explain, just score" task fails `MIN_OUTPUT_LENGTH = 5`; a chart-
-extraction task that happens to use the word "build" can route through
-`DATA_TASK_KEYWORDS` while one that says "compute" does not.
+Each list tests `state.user_request` against hand-curated Chinese +
+English phrases — `re.search` for the pattern lists, a bare `kw in
+lowered_request` substring test for the keyword lists. Both directions
+fail.
+
+*Misses*: "make it fail on purpose" never matches `故意.*报错`;
+"compute the median salary" matches no `DATA_TASK_KEYWORDS` entry, so a
+genuine data task skips `output_contains_data`.
+
+*False hits* are worse, because the keywords are matched as raw
+substrings with no word boundary:
+
+| Request | Trips | Because |
+|---|---|---|
+| "List every **account** holder's name" | `count` | ac**count** |
+| "Write a one-line **summ**ary of the README" | `sum` | **sum**mary |
+| "Explain the **mean**ing of this flag" | `mean` | **mean**ing |
+
+All three are routed through `output_contains_data` as data tasks.
 
 Review correspondence: items ① (directive hardcoding), ③ (regex misses),
 ④ (output-length floor), ⑦ (keyword breadth) — all four are surface
-manifestations of the same root.
+manifestations of the same root. ④ has since been retired on its own:
+`MIN_OUTPUT_LENGTH` is gone and `output_not_empty` checks presence, not
+length (see CHANGELOG). The remaining three stand.
 
 ### Root cause
 

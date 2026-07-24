@@ -216,7 +216,12 @@ class HeuristicEvaluator:
         # mean of an empty series) or inf (divide by zero); those stay.
         if "average" in state.user_request.lower() or "mean" in state.user_request.lower() or "统计" in state.user_request:
             stripped = stdout.strip()
-            if stripped in self.SUSPICIOUS_NUMERIC:
+            # casefold, because Python prints `None` capitalised: a
+            # case-sensitive lookup against the lowercase set never matched it,
+            # so the strongest entry — a function that forgot to return —
+            # had never once fired in production. `nan`/`inf` print lowercase
+            # and matched by luck.
+            if stripped.casefold() in self.SUSPICIOUS_NUMERIC:
                 checks.append(EvalCheck(
                     name="suspicious_result",
                     passed=False,

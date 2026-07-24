@@ -108,6 +108,17 @@ def test_broken_computation_values_still_flagged(stdout: str):
     assert result.failure_type == "suspicious_result"
 
 
+@pytest.mark.parametrize("stdout", ["None\n", "NaN\n", "Inf\n", "-Inf\n"])
+def test_capitalised_broken_values_are_flagged(stdout: str):
+    # Regression: the lookup was case-sensitive against an all-lowercase set,
+    # so `None` — what Python actually prints for a function that forgot to
+    # return — slipped through. nan/inf matched only because Python happens to
+    # print them lowercase.
+    result = _evaluate(stdout, user_request=ZERO_REQUEST)
+    assert not result.passed
+    assert any(c.name == "suspicious_result" and not c.passed for c in result.checks)
+
+
 # --- unchanged behavior everywhere else --------------------------------------
 
 
