@@ -9,16 +9,16 @@ English | [简体中文](README.zh-CN.md)
 **An execution-reliability runtime for AI agents.** The retry decision is
 taken out of the model and into an explicit, typed, auditable runtime layer
 — so when a task fails in a recoverable way, the runtime classifies the
-failure, recalls prior repairs from memory, and retries with a targeted hint
-instead of looping blindly.
+failure with rules, recalls prior repairs from memory across sessions, and
+retries with a targeted hint.
 
 ---
 
 ## The idea in one diagram
 
-Most agent stacks let the LLM decide everything inside a tool loop. Reforge
-inverts that: execution is the first-class layer, the model is one component
-inside it.
+Reforge targets one specialized case — executing Python scripts. It classifies
+execution failures with rules, and uses that classification to steer the LLM's
+retry loop.
 
 ```
 LLM      → generate code / call skill
@@ -124,7 +124,7 @@ products.
 
 | Concern | LLM-as-conductor agents | **Reforge** |
 |---|---|---|
-| Retry decision | Model decides inside the tool loop | **Governor pipeline** (Intent → Capability → Classify → Policy) — typed classification drives a targeted retry hint, not a free-form judgement |
+| Retry decision | Model judges from code context and error text inside the loop | **Governor pipeline** (Intent → Capability → Classify → Policy) — rule-based typed classification drives a targeted retry hint |
 | Failure classification | Natural language | **Typed enum** `failure_mode` + structured `problem_signature` |
 | Cross-session learning | Each run starts cold | **Memory substrate** — typed records, structural recall (not vector-only) |
 | Auditability | Conversation history | **Append-only event log** + `SessionReplay` reconstruction |

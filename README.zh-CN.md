@@ -8,15 +8,15 @@
 
 **面向 AI Agent 的执行可靠性运行时（execution-reliability runtime）。**
 把重试决策从模型手里拿出来，放进一个显式、强类型、可审计的运行时层——
-当任务以可恢复的方式失败时，由运行时对失败进行分类、从记忆中召回历史修复
-经验，并携带针对性提示进行重试，而不是盲目循环。
+当任务以可恢复的方式失败时，由运行时基于规则对失败进行分类、从记忆中召回
+跨会话的历史修复经验，并携带针对性提示进行重试。
 
 ---
 
 ## 一张图看懂核心思路
 
-大多数 Agent 框架让 LLM 在工具循环内决定一切。Reforge 把这个关系倒转过来：
-执行是第一等公民层，模型只是其中的一个组件。
+Reforge 针对 Python 脚本执行这一特化情形：用规则对执行失败做分类，再用分类
+结果引导 LLM 的重试循环。
 
 ```
 LLM      → 生成代码 / 调用 skill
@@ -110,7 +110,7 @@ REFORGE_GOVERNOR_BYPASS=1 reforge "read sales.csv, calc revenue mean"
 
 | 关注点 | LLM 主导的 Agent | **Reforge** |
 |---|---|---|
-| 重试决策 | 模型在工具循环内自行决定 | **Governor 流水线**（Intent → Capability → Classify → Policy）——类型化分类驱动有针对性的重试提示，而非自由裁量 |
+| 重试决策 | 模型在循环内依据代码上下文和报错文本判断 | **Governor 流水线**（Intent → Capability → Classify → Policy）——基于规则的类型化分类驱动有针对性的重试提示 |
 | 失败分类 | 自然语言 | **类型化枚举** `failure_mode` + 结构化 `problem_signature` |
 | 跨会话学习 | 每次运行冷启动 | **记忆基座** —— 类型化记录、结构化召回（不只是向量检索） |
 | 可审计性 | 对话历史 | **Append-only 事件日志** + `SessionReplay` 重建 |
