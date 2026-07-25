@@ -994,3 +994,75 @@ different identity" alone produces.
   a different corpus won't hold.
 
 ---
+
+## L9. A named input that does not exist is treated as a recoverable failure — the runtime can "recover" a task that should hard-fail
+
+### Symptom
+
+`csv_recovery_missing_file` (`reforge/benchmark/cases.py:71`) asks the
+runtime to read `nonexistent_data.csv`, a file that is not there. The case
+declares `expected_outcome="FAILED"` — "file truly missing — should fail
+after retry exhaustion". In the recorded run
+(`docs/benchmark_sample.md`) it came back `RECOVERED` in 2 attempts with
+an eval score of 1.00, and is marked FAIL in the suite only because
+expected ≠ actual. The runtime did not report that it could not do the
+task; it produced a passing answer for a task whose input does not exist.
+
+### Root cause
+
+Nothing in the pipeline distinguishes "the input this request names is
+absent" from an ordinary recoverable execution error.
+`FileNotFoundError` maps to root cause `missing_file`
+(`reforge/memory/fingerprint.py:204`) — a normal recoverable fingerprint
+that feeds recall and a `repair_hint` like any other. `TaskIntent`
+(`reforge/runtime/policy/task_intent.py:15-20`) has no value covering
+"the request names an input that isn't there", so the governor's
+intent-driven STOP path never applies and the retry proceeds on budget.
+Codegen is then free to satisfy the request some other way — which, for
+this class of request, is exactly the behaviour that should not happen.
+
+### Right fix (deferred)
+
+Classify an absent declared input as a **precondition** failure rather
+than an execution failure — checked once against the task's declared
+inputs, before or at the first attempt — so the governor stops instead of
+retrying. This is the intent/precondition axis, not the retry-policy
+axis: the retry loop is behaving correctly given the classification it
+was handed.
+
+### Why defer
+
+- Evidence is one descriptive run (n=1, no seeds, no CI). It is a tuning
+  signal, not a measured defect rate.
+- The fixture itself is weak — the sibling experience-benchmark fixtures
+  in the same family are flagged as too easy in
+  `docs/experience_benchmark.md` §8.5 and are scheduled for rework;
+  pinning behaviour against a fixture already slated to change would
+  encode the wrong target.
+- Not on the pre-registered eval path: the Phase 0/1 BIRD corpora contain
+  no absent-input case, so this axis has no calibrated instrument behind
+  it (see `docs/eval/PHASE0_CORPUS.md`).
+- A precondition gate has a real false-STOP cost: tasks that legitimately
+  create a file before reading it would look identical at check time.
+
+### Trigger to revisit
+
+- A reworked fixture (seeded, repeated) shows the over-recovery is
+  reproducible rather than a single-run artefact.
+- A real workload produces a confidently wrong answer built on a
+  substituted input — i.e. the over-recovery reaches the final answer,
+  not just the outcome label.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Making `FileNotFoundError` globally non-retryable. That kills the
+  legitimate recovery this same fingerprint exists for (the
+  underscore-vs-hyphen path-typo case, `experience_cases.py:106`), which
+  is a genuine repair, not an over-recovery.
+- ❌ Keyword-matching the request for "nonexistent" / benchmark filenames.
+  That pins the benchmark, not the behaviour.
+- ❌ Reading this as evidence that self-heal "doesn't work". The same run
+  recovered every other `csv_recovery` case correctly; the defect is in
+  where the boundary sits, not in the loop.
+
+---
