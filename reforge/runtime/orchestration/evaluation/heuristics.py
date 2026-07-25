@@ -72,15 +72,6 @@ class HeuristicEvaluator:
     ]
     MIN_RESEARCH_OUTPUT_LENGTH = 15
 
-    # Consecutive attempts that must report the same error_type before the
-    # retry loop is judged stuck. Sibling of ClassifyStage's
-    # _REPEAT_SIGNATURE_THRESHOLD, which applies the same window to the finer
-    # structural fingerprint; both are pinned by the same budget arithmetic —
-    # with the default max_retries=2 (3 attempts total), 2 is the only value
-    # that can fire before the budget runs out. Raising this without also
-    # raising max_retries makes the check dead code.
-    DRIFT_REPEAT_THRESHOLD = 2
-
     # User intent patterns that relax error-related checks
     INTENTIONAL_ERROR_PATTERNS = [
         "故意报错", "故意触发", "故意让", "让它出错", "让他出错",
@@ -278,25 +269,6 @@ class HeuristicEvaluator:
                 detail="Task expects real uncaught exception, but code contains try/except — swallows authentic traceback",
             ))
 
-        # Check: retry_drift — same error type repeating across attempts (no progress)
-        rr = state.semantic_state.reflection_result
-        window = self.DRIFT_REPEAT_THRESHOLD
-        if (not is_intentional
-                and rr
-                and rr.error_type
-                and len(state.attempts) >= window):
-            current_error = rr.error_type
-            recent_errors = [a.error_type for a in state.attempts[-window:] if a.error_type]
-            if len(recent_errors) >= window and all(e == current_error for e in recent_errors):
-                checks.append(EvalCheck(
-                    name="retry_drift",
-                    passed=False,
-                    detail=(
-                        f"'{current_error}' repeated across {len(recent_errors)} attempts — "
-                        "code regeneration is not fixing the root cause"
-                    ),
-                ))
-
         # Check: output_contains_data — data-oriented tasks need substantive output
         lowered_request = state.user_request.lower()
         is_data_task = any(kw in lowered_request for kw in self.DATA_TASK_KEYWORDS)
@@ -470,8 +442,6 @@ class HeuristicEvaluator:
             return "invalid_output"
         if "stderr_clean" in failed:
             return "invalid_output"
-        if "retry_drift" in failed:
-            return "retry_drift"
         if "output_contains_data" in failed:
             return "insufficient_output"
         if "compare_swallowed" in failed:

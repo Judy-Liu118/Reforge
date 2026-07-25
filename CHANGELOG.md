@@ -6,23 +6,21 @@ versions track the `pyproject.toml` `[project] version`.
 
 ## [Unreleased]
 
-### Changed
-- **`retry_drift`'s repeat window is now a named constant** —
-  `HeuristicEvaluator.DRIFT_REPEAT_THRESHOLD`, replacing three separate
-  literal `2`s (the length guard, the slice bound, and the count guard) that
-  all meant the same thing and could drift apart if edited individually. The
-  value and behaviour are unchanged. It documents its tie to ClassifyStage's
-  `_REPEAT_SIGNATURE_THRESHOLD` (the same window applied to the finer
-  structural fingerprint) and to the `max_retries=2` budget that makes 2 the
-  only value able to fire before the budget runs out.
-
-### Added
-- **`retry_drift` test coverage** (`test_evaluator_retry_drift.py`) — the
-  check previously had none. Pins the window boundaries, the
-  intentional-error exemption, the empty-`error_type` skip, and the fact that
-  a non-zero exit outranks drift in `failure_type` (so `retry_drift` surfaces
-  as a failure_type only on a clean exit). One test overrides the threshold in
-  a subclass to prove all three call sites read the constant.
+### Removed
+- **`retry_drift` heuristic check** (and its `DRIFT_REPEAT_THRESHOLD`
+  constant, `feedback.py` instruction, and tests). It compared only the
+  *exception class name* across the last N attempts, which is both too coarse
+  (`KeyError:'col_a'` → `KeyError:'col_b'` is genuine progress but read as
+  drift) and too weak (one root cause resurfacing as a different class slips
+  through). The runtime already detects drift more precisely in
+  `ClassifyStage._is_repeated_signature`, which matches the full structural
+  *fingerprint* (error class + target module/key/file/name) and is what
+  actually drives the stop-retrying decision. The heuristic version was also
+  inert as a signal: it can only fire when `exit_code != 0` (the only path
+  that populates `reflection_result.error_type`), where `clean_exit`'s
+  `execution_failed` already outranks it, so it never surfaced as a
+  `failure_type` — it only nudged `score`. A coarse, unreachable duplicate of
+  a signal the governor computes correctly.
 
 ### Fixed
 - **`suspicious_result` never matched `None`** — the lookup was

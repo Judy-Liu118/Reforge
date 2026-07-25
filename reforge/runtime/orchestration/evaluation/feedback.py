@@ -45,11 +45,6 @@ _CHECK_TO_INSTRUCTION: dict[str, str] = {
         "Remove all try/except blocks — "
         "this task requires the exception to propagate naturally to stderr."
     ),
-    "retry_drift": (
-        "The same error type has appeared in multiple consecutive attempts. "
-        "Your current approach is not working — try a fundamentally different strategy. "
-        "Consider: different library, different algorithm, or different data access method."
-    ),
     "output_contains_data": (
         "Output is too brief for a data task. "
         "Use print() to display intermediate results, computed values, "

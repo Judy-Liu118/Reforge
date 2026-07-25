@@ -1,4 +1,4 @@
-"""Tests for P11 HeuristicEvaluator additions: retry_drift and output_contains_data."""
+"""Tests for P11 HeuristicEvaluator additions: output_contains_data."""
 
 from __future__ import annotations
 
@@ -40,75 +40,6 @@ def _state(
     )
     state.attempts = attempts or []
     return state
-
-
-# --- retry_drift check ---
-
-def test_retry_drift_detected_when_same_error_repeats() -> None:
-    attempts = [
-        AttemptRecord(attempt=0, exit_code=1, error_type="KeyError"),
-        AttemptRecord(attempt=1, exit_code=1, error_type="KeyError"),
-    ]
-    state = _state(
-        stdout="x",
-        exit_code=1,
-        attempts=attempts,
-        reflection_error_type="KeyError",
-        retry_count=2,
-    )
-    er = HeuristicEvaluator().evaluate(state)
-    drift_checks = [c for c in er.checks if c.name == "retry_drift"]
-    assert len(drift_checks) == 1
-    assert not drift_checks[0].passed
-
-
-def test_retry_drift_not_flagged_when_errors_differ() -> None:
-    attempts = [
-        AttemptRecord(attempt=0, exit_code=1, error_type="KeyError"),
-        AttemptRecord(attempt=1, exit_code=1, error_type="ValueError"),
-    ]
-    state = _state(
-        stdout="x",
-        exit_code=1,
-        attempts=attempts,
-        reflection_error_type="ValueError",
-        retry_count=2,
-    )
-    er = HeuristicEvaluator().evaluate(state)
-    drift_checks = [c for c in er.checks if c.name == "retry_drift"]
-    assert len(drift_checks) == 0
-
-
-def test_retry_drift_not_flagged_on_first_attempt() -> None:
-    attempts = [AttemptRecord(attempt=0, exit_code=1, error_type="KeyError")]
-    state = _state(
-        stdout="x",
-        exit_code=1,
-        attempts=attempts,
-        reflection_error_type="KeyError",
-        retry_count=1,
-    )
-    er = HeuristicEvaluator().evaluate(state)
-    drift_checks = [c for c in er.checks if c.name == "retry_drift"]
-    assert len(drift_checks) == 0
-
-
-def test_retry_drift_not_flagged_for_intentional_task() -> None:
-    attempts = [
-        AttemptRecord(attempt=0, exit_code=1, error_type="SyntaxError"),
-        AttemptRecord(attempt=1, exit_code=1, error_type="SyntaxError"),
-    ]
-    state = _state(
-        stdout="x",
-        exit_code=1,
-        user_request="故意报错演示 traceback",
-        attempts=attempts,
-        reflection_error_type="SyntaxError",
-        retry_count=2,
-    )
-    er = HeuristicEvaluator().evaluate(state)
-    drift_checks = [c for c in er.checks if c.name == "retry_drift"]
-    assert len(drift_checks) == 0
 
 
 # --- output_contains_data check ---

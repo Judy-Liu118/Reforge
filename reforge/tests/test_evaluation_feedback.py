@@ -43,10 +43,10 @@ def test_format_eval_feedback_maps_all_known_checks() -> None:
 
 
 def test_format_eval_feedback_multiple_failures() -> None:
-    er = _make_result(["output_not_empty", "retry_drift"])
+    er = _make_result(["output_not_empty", "clean_exit"])
     result = format_eval_feedback(er)
     assert "[output_not_empty]" in result
-    assert "[retry_drift]" in result
+    assert "[clean_exit]" in result
 
 
 def test_format_eval_feedback_unknown_check_falls_back_to_detail() -> None:
@@ -54,12 +54,6 @@ def test_format_eval_feedback_unknown_check_falls_back_to_detail() -> None:
     er = EvaluationResult(passed=False, score=0.0, checks=[check], summary="x", failure_type="x")
     result = format_eval_feedback(er)
     assert "custom detail text" in result
-
-
-def test_retry_drift_instruction_mentions_different_approach() -> None:
-    er = _make_result(["retry_drift"])
-    result = format_eval_feedback(er)
-    assert "different" in result.lower()
 
 
 def test_blanket_except_instruction_mentions_silent_suppression() -> None:
