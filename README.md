@@ -6,19 +6,15 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**An execution-reliability runtime for AI agents.** The retry decision is
-taken out of the model and into an explicit, typed, auditable runtime layer
-— so when a task fails in a recoverable way, the runtime classifies the
-failure with rules, recalls prior repairs from memory across sessions, and
-retries with a targeted hint.
-
----
-
-## The idea in one diagram
-
-Reforge targets one specialized case — executing Python scripts. It classifies
-execution failures with rules, and uses that classification to steer the LLM's
-retry loop.
+**An execution-reliability runtime for AI agents.** Reforge runs LLM-generated
+Python in a sandbox and owns what happens when that code fails. A failed
+attempt is classified by rules into a typed `failure_mode`, matched against
+structural fingerprints of past failures, and retried with a `repair_hint`
+recalled from memory. Retry / accept / stop is decided by an explicit governor
+pipeline outside the model, and every decision lands on an append-only event
+log, so any run can be replayed and audited. Compared with a plain retry loop,
+the added parts are the rule-based failure classification, the cross-session
+repair memory, and the audit trail.
 
 ```
 LLM      → generate code / call skill
@@ -28,29 +24,6 @@ Governor → typed classification → targeted retry on recoverable failure,
 Memory   → store typed failure mode + repair strategy for next time
 Events   → emit immutable facts to an append-only log
 ```
-
-The consequence on recoverable failures: each retry attempt is shaped by a
-typed `failure_mode` and a `repair_hint` recalled from memory, rather than a
-naive while-retry on `exit_code != 0`. On task-intent-driven failures
-(`EXPECTED_ERROR` / `TRACEBACK_DEMO`, classified once from the user's
-request by IntentStage — not inferred from runtime execution history) and
-watchdog timeouts the governor issues an immediate STOP instead of burning
-the budget. Outside those two
-paths the governor and a naive baseline retry to the same budget — and
-whether that buys better outcomes is a **measured question, not a slogan**:
-the pre-registered BIRD ablation below returned an honest null on
-success_rate (the mechanism's value concentrates where first attempts fail
-*loudly*). Unrecoverability recognition now covers the repeated-identical-failure
-case — two consecutive attempts with the same structural fingerprint trigger a
-deliberate STOP (`repeated_failure_signature`) instead of burning the rest of
-the budget. That detector landed *after* the first two Phase 1 runs; a third
-full run with it live reproduced the null and measured the detector **dormant
-on this corpus** — BIRD retries are almost entirely quiet evaluator
-rejections, which carry no traceback for it to fingerprint. Generic
-unrecoverability recognition beyond the loud-and-persistent case remains open
-([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3).
-Every decision lands on an append-only event log, so any run can be replayed
-and audited after the fact.
 
 ---
 
@@ -81,24 +54,8 @@ sequenceDiagram
     W->>M: store RECOVERY (problem_signature → repair that worked)
 ```
 
-The honest comparison is an **ablation, not a product race**: same model, same
-task, the governor decision layer and its memory-recalled repair hints **off**
-vs **on**. With the runtime layer off, a naive retry loop either burns its
-budget, gives up, or returns a confidently wrong answer with no audit trail.
-With it on, the failure is classified, the retry prompt carries a repair hint
-recalled by failure fingerprint, and the whole run is replayable from the
-event log. (Reflection-based root-cause context is part of the base loop and
-stays on in both arms — the toggle isolates the decision layer + recall, not
-every use of memory.) That is the *mechanism* contrast; what it measurably
-buys is reported in [Evaluation methodology](#evaluation-methodology) below,
-including where it buys nothing. The recall itself is pure structural-fingerprint
-scoring, not semantic — it can hand two causally unrelated failures of the
-same *shape* the same hint (confirmed live: see
-[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L8); what keeps
-that from corrupting a retry is codegen treating the hint as a suggestion,
-not a patch.
-
-The toggle is a real env flag, not a slogan:
+The decision layer and its memory-recalled repair hints sit behind one env
+flag, so the comparison is an ablation on the same model, task and sandbox:
 
 ```bash
 # On  — typed governor pipeline (Intent → Capability → Classify → Policy)
@@ -109,185 +66,61 @@ REFORGE_GOVERNOR_BYPASS=1 reforge "read sales.csv, calc revenue mean"
 # PowerShell: $env:REFORGE_GOVERNOR_BYPASS="1"; reforge "read sales.csv, calc revenue mean"
 ```
 
-Same model, same task, same sandbox — only the decision layer changes. See
-`reforge/tests/test_governor_bypass.py` for the behavioural contract.
+Reflection-based root-cause context is part of the base loop and stays on in
+both arms — the flag isolates the decision layer plus recall. Behavioural
+contract: `reforge/tests/test_governor_bypass.py`. What the layer measurably
+buys is in [Evaluation methodology](#evaluation-methodology).
 
 > Demo recording: [`docs/demo/record.md`](docs/demo/record.md) — one
 > `asciinema rec` produces a cast/GIF of failure → recovery on a single task.
 
 ---
 
-## How it differs (conceptual)
+## What the governor layer adds
 
-This is an architectural contrast, **not** a benchmark claim against these
-products.
+Both columns are this repository, one env flag apart — the same two arms the
+evaluation below measures.
 
-| Concern | LLM-as-conductor agents | **Reforge** |
+| Concern | Naive retry loop (`REFORGE_GOVERNOR_BYPASS=1`) | **Governor on** |
 |---|---|---|
-| Retry decision | Model judges from code context and error text inside the loop | **Governor pipeline** (Intent → Capability → Classify → Policy) — rule-based typed classification drives a targeted retry hint |
-| Failure classification | Natural language | **Typed enum** `failure_mode` + structured `problem_signature` |
-| Cross-session learning | Each run starts cold | **Memory substrate** — typed records, structural recall (not vector-only) |
-| Auditability | Conversation history | **Append-only event log** + `SessionReplay` reconstruction |
-| Safety | Command approval | **3 layers**: pre-codegen request gate (regex on user_request) + post-codegen AST guard + retry-integrity check (catches blank `except`, swallowed exception, fake success output) |
-| Sandbox | Host shell / one container | **Pluggable backend** — subprocess (default) or hardened Docker |
+| Retry decision | `exit_code != 0` → RETRY to budget, else ACCEPT | **Governor pipeline** — Intent → Capability → Classify → Policy |
+| Failure classification | None — exit code only | **Typed enum** `failure_mode` + structured `problem_signature` |
+| Retry prompt | Regenerated from the same context | Carries a **`repair_hint`** recalled by failure fingerprint from prior sessions |
+| Stopping early | Retries to budget | Deliberate STOP on intent-driven failure, watchdog timeout, or a repeated failure signature |
+
+The sandbox backend (subprocess or hardened Docker), the append-only event log
+with `SessionReplay`, and the three safety layers (pre-codegen request gate,
+post-codegen AST guard, retry-integrity check for blank `except` / swallowed
+exceptions / fake success output) are properties of the runtime and run
+identically in both arms.
 
 ---
 
 ## Evaluation methodology
 
-**TL;DR** — three pre-registered runs on a locked BIRD SQL corpus (3 × 200
-runs, real LLM, paired per-seed CIs): the governor **does not move
-success_rate** (run 2: 61.0% vs 61.0%, Δ 95% CI [-4.4, +4.4]pp; run 3:
-61.0% vs 62.0%, CI [-9.1, +7.1]pp) and costs 1.4–1.6× tokens-per-solved.
-Along the way, the pre-registered sensitivity appendix caught the internal
-evaluator systematically rejecting correct answers (run 1), the fix was
-validated on held-out data (FN 42.7% → 0.0%), a full re-run confirmed the
-null is real (run 2), and a final run with the post-eval repeated-signature
-detector live showed it never triggers on this workload (run 3). Plain
-reading: retry-with-reflection pays off where first attempts fail *loudly*
-(timeouts, tracebacks — see Phase 0), not where a wrong answer exits
-cleanly. The deliverable here is a calibrated boundary, not a victory lap.
+Three pre-registered runs on a locked BIRD SQL corpus (3 × 200 real-LLM runs,
+paired per-seed 95% CIs); metrics, delta formulas and the significance rule
+were locked before any real-data run.
 
-The full record lives in `docs/eval/`. The methodology is pre-registered —
-metrics, paired-delta formulas, sentinel rules for missing token usage, and
-the significance decision rule are all locked **before** any real-data run,
-so post-hoc edits to make a number look better are visible as such.
-
-- [`docs/eval/PHASE0_METRICS.md`](docs/eval/PHASE0_METRICS.md) —
-  pre-registration record (v4, signed off). The pre-registered hypothesis
-  was narrowed to a single pillar — *governor improves recovery quality on
-  recoverable failures* (recovery rate, attempts on solved, tokens per
-  solved) — and Phase 1 run 2 subsequently returned **null** on it; the
-  pre-registration stands as written because hypotheses don't get edited
-  after the data. Tier B
-  metrics (deliberate-STOP precision/recall, false-stop rate) were explicitly
-  deferred because the governor had no history-based unrecoverability
-  detector at pre-registration time; the repeated-signature detector landed
-  post-Phase-1, and the fresh run against the changed system (run 3) measured
-  **zero activations** on this corpus — Tier B is undefined-on-BIRD rather
-  than deferred (see KNOWN_LIMITATIONS L3). Headline claims require the paired
-  95% CI to not cross zero; "consistent with noise" deltas can appear in
-  tables but never in headline copy.
-- [`docs/eval/PHASE0_CORPUS.md`](docs/eval/PHASE0_CORPUS.md) — locked
-  calibration corpus (5 BIRD-simple picks + 4 hand-built toys, including
-  the timeout decoy that probes the deliberate-STOP code path).
-- [`docs/eval/PHASE0_CALIBRATION.md`](docs/eval/PHASE0_CALIBRATION.md) —
-  Phase 0 instrument calibration: **GO** as of 2026-07-10, re-run after
-  the memory→repair_hint loop was wired end-to-end and the driver gained
-  per-(mode, seed) cold-start memory isolation; all four mechanism gates
-  passed (path-swap on bypass, governor pipeline fires, timeout
-  deliberate-STOP reachable, seeds plumb through).
-- [`docs/eval/PHASE1_BIRD_ABLATION.md`](docs/eval/PHASE1_BIRD_ABLATION.md) —
-  Phase 1 BIRD ablation **run 1** (2026-07-11, historical — measures the
-  pre-calibration system): 20 locked cases × 2 arms × 5 seeds (200 runs),
-  field-of-record = SQL comparator, corpus frozen before the run
-  ([`PHASE1_CORPUS.md`](docs/eval/PHASE1_CORPUS.md)). Null on success_rate
-  (65.0% both arms) at 3.1× tokens-per-solved, and the pre-registered
-  sensitivity appendix returned **ASYMMETRIC**: the internal evaluator was
-  rejecting 80.8% of the governor arm's comparator-correct attempts, so the
-  retry loop mostly re-solved already-solved cases (34/100 runs; 3 lost a
-  correct answer; 5 genuine recoveries). That fired the KNOWN_LIMITATIONS
-  L6 trigger and gated this axis on an evaluator fix.
-- [`docs/eval/EVALUATOR_CALIBRATION.md`](docs/eval/EVALUATOR_CALIBRATION.md) —
-  the gating fix, validated **held-out** (300 pool questions the Phase 1
-  picks never touched): the evaluator now recognizes an explicit
-  output-format contract in the request and stops penalizing
-  contract-compliant scalar answers. FN rate on correct output 42.7% → 0.0%,
-  zero rejection-integrity regressions. Old run-1 records were not
-  re-scored — the evaluator drives runtime retry decisions, so only a fresh
-  run measures the fixed system.
-- [`docs/eval/PHASE1_BIRD_ABLATION_R2.md`](docs/eval/PHASE1_BIRD_ABLATION_R2.md) —
-  Phase 1 **run 2** (2026-07-11, post-calibration — the load-bearing
-  result for the pre-L3 runtime), same locked corpus and protocol. Sensitivity appendix:
-  evaluator FN 0.0% in both arms, **verdict symmetric** — headlines stand
-  unqualified. **The null on the primary metric is real, not an artifact**:
-  success_rate 61.0% vs 61.0% (paired Δ 95% CI [-4.4%, +4.4%]);
-  recovery_rate +6.5pp with a CI crossing zero (3 genuine recoveries in 100
-  governor runs, all triggered by real failures — zero false-negative
-  churn). Significant deltas remain cost-side but shrank sharply after the
-  fix: 1.4× tokens-per-solved (was 3.1×) and 1.5× wall-clock (was 3.2×).
-  Plain reading: on single-shot BIRD SQL, retry-with-reflection rarely
-  converts a semantically wrong query into a right one — the governor's
-  measured value on this corpus is bounded by how rarely first attempts
-  fail loudly, and that is now stated with calibrated instrumentation
-  instead of hidden behind evaluator noise.
-- [`docs/eval/PHASE1_BIRD_ABLATION_R3.md`](docs/eval/PHASE1_BIRD_ABLATION_R3.md) —
-  Phase 1 **run 3** (2026-07-13, with the L3 repeated-signature detector
-  live — **the record for the shipped runtime**), same locked corpus and
-  protocol. The null reproduced a third time: success_rate 61.0% vs 62.0%
-  (paired Δ 95% CI [-9.1, +7.1]pp); sensitivity appendix symmetric again
-  (evaluator FN 0.0% both arms). The detector itself recorded **zero
-  activations in 200 runs**, and the raw records say why: 30 of the
-  governor arm's 31 retried attempts were quiet evaluator rejections
-  (exit 0, no traceback — nothing for the fingerprint history to match),
-  and no run had two consecutive loud failures. So run 3's governor made
-  decision-for-decision the same choices the run-2 runtime would have, and
-  the cost deltas are statistically consistent with run 2 (1.6× vs 1.4×
-  tokens-per-solved, overlapping CIs). One honest wrinkle, disclosed rather
-  than buried: first_try_rate's seed-level Δ (-5.0pp, CI [-9.4, -0.6])
-  nominally excludes zero, but the locked case-level robustness check does
-  not ([-14.0, +4.0]), and both arms run an identical attempt-1 pipeline by
-  construction (the bypass flag only changes the retry decision), so we
-  read it as seed-level noise (df = 4), not a mechanism — it stays out of
-  headline claims.
-
-> **Early descriptive snapshot — pre-dates the pre-registered eval above.**
-> Kept for transparency; do not read as a headline claim. The pre-registered
-> Phase 1 run-3 numbers ([`docs/eval/PHASE1_BIRD_ABLATION_R3.md`](docs/eval/PHASE1_BIRD_ABLATION_R3.md))
-> are the load-bearing comparison for the shipped runtime.
-
-One run of the curated 10-case suite against `deepseek-v4-pro`, no mocks
-(`docs/benchmark_sample.md`). Reported as-is, including the cases where actual
-≠ expected — those are real tuning signals, not failures to hide.
-
-| Category | Cases | Pass | Recovered | Avg attempts |
+| BIRD ablation | Naive | Governor | Paired Δ, 95% CI | Verdict |
 |---|---|---|---|---|
-| `csv_basic` | 3 | 3/3 (100%) | 0% | 1.00 |
-| `csv_recovery` | 3 | 1/3 (33%) | **100%** | 2.00 |
-| `denied` | 2 | 2/2 (100%) | 0% | 1.00 |
-| `intentional` | 2 | 1/2 (50%) | 0% | 2.50 |
-| **Overall** | **10** | **7 (70%)** | **30%** | **1.60** |
+| success_rate (run 2) | 61.0% | 61.0% | 0.0pp [-4.4, +4.4] | consistent with noise |
+| success_rate (run 3, shipped runtime) | 62.0% | 61.0% | -1.0pp [-9.1, +7.1] | consistent with noise |
+| tokens per solved (run 3) | 4,644 | 7,351 | +2,707 [+1,199, +4,215] | **significant** — 1.6× cost |
 
-- **Self-healing holds**: every `csv_recovery` case ended `RECOVERED` — the
-  governor's RETRY decisions were upheld and produced correct output.
-- **Safety guard 100%**: both `denied_*` cases (incl. `rm -rf`, fork bomb, and
-  a prompt-injection variant) were blocked before the sandbox ever ran.
-- **Honest gap**: `csv_recovery_missing_file` was *expected* to hard-fail but
-  the runtime recovered too aggressively — a real `TaskIntent` tuning target,
-  left visible on purpose. The fixture itself is also weak (see
-  `docs/experience_benchmark.md` §8.5) and will be reworked in v3.
+Retry-with-reflection pays off where a first attempt fails *loudly* (timeout,
+traceback), not where a wrong answer exits cleanly: 30 of the governor arm's
+31 retries were quiet evaluator rejections, so the repeated-signature detector
+never fired and generic unrecoverability recognition remains open
+([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3). Run 1 measured
+a pre-calibration evaluator that rejected correct answers; the fix was
+validated held-out (FN 42.7% → 0.0%) before run 2.
 
-Reproduce: `python -m reforge.benchmark --out docs/benchmark_sample.md`
-
-### Memory ablation (paired, multi-seed)
-
-The benchmark above is descriptive. For a controlled signal-vs-noise read on
-whether **cross-session memory actually helps**, the Experience Memory
-Benchmark runs the same fingerprint axis twice per pair (Cold = fresh
-substrate per case, Warm = pre-seeded substrate from a sibling case) across 5
-seeds with 95% CI:
-
-| KPI (warm − cold, per-seed delta) | Mean | 95% CI | Verdict |
-|---|---|---|---|
-| Transfer success rate | +0% | [+0%, +0%] | consistent with noise |
-| First-try rate delta | +4% | [-7%, +15%] | consistent with noise |
-| Attempts reduction | +0.04 | [-0.07, +0.15] | consistent with noise |
-
-The **honest** finding (4/5 pairs deterministic; P2 carries all the variance;
-P3/P4 fixtures are too easy for the LLM to one-shot): on this suite, this
-memory layer does **not** reach statistical significance. This is what a
-publishable null result looks like — methodology hardened from v0's
-contaminated +20% to v1's isolated +0% to v2's multi-seed CI. See
-[`docs/experience_benchmark.md`](docs/experience_benchmark.md) for the full
-v0 → v1 → v2 progression and the v3 roadmap (fix weak fixtures, add Memory
-Influence Score to disambiguate recall vs used).
-
-> Protocol note: the table above uses `N_seeds = 5` from the v2
-> experience-memory harness. The Phase 1 pre-registration
-> ([`docs/eval/PHASE0_METRICS.md`](docs/eval/PHASE0_METRICS.md) §3) locks
-> the memory-axis ablation at `N_seeds = 3` against a different corpus and
-> harness — different protocol, different evidence base, intentionally not
-> averaged together.
+Full record — pre-registration, locked corpora, instrument calibration, all
+three runs: [`docs/eval/`](docs/eval/). Memory ablation (cold vs warm
+substrate, 5 seeds): no KPI reaches significance, see
+[`docs/experience_benchmark.md`](docs/experience_benchmark.md). Earlier 10-case
+descriptive snapshot: [`docs/benchmark_sample.md`](docs/benchmark_sample.md).
 
 ---
 
@@ -316,28 +149,22 @@ reforge "..."
 
 ## Applications
 
-The runtime is exercised on real tasks (not synthetic CSVs) to show the
-self-heal loop survives messy real-world data. Each has a reproducible report
-under `docs/`:
+The runtime is exercised on real tasks, each with a reproducible report under
+`docs/`:
 
-- **Auto-EDA** — 8-stage profiling of a CSV; validated on UCI/OpenML `iris` /
-  `titanic` / `wine_quality` (24 stages, 2 recoveries, 0 hard failures). See `docs/eda_*.md`.
+- **Auto-EDA** — 8-stage profiling of a CSV; UCI/OpenML `iris` / `titanic` /
+  `wine_quality` (24 stages, 2 recoveries, 0 hard failures). `docs/eda_*.md`.
 - **Text-to-SQL** — NL→SQL through the runtime, order-insensitive exec-match
-  grading (BIRD/Spider convention). See `docs/sql_toy_bench.md`.
-- **HPO** — drives N sklearn-pipeline trials per case with result-is-truth
-  grading + plateau detection. See `docs/hpo_toy_bench.md`.
+  grading (BIRD/Spider convention). `docs/sql_toy_bench.md`.
+- **HPO** — N sklearn-pipeline trials per case, result-is-truth grading +
+  plateau detection. `docs/hpo_toy_bench.md`.
 
 ---
 
 ## Architecture
 
-`RuntimeState` evolves **only through contract tests** — the ban is on
-silent dual-write flat fields that duplicate nested sub-state (enforced by
-`reforge/tests/test_state_no_flat_fields.py`), not on new top-level inputs.
-Adding a true task-level input is permitted when it earns a payload-field
-slot in the contract test's whitelist; `image_inputs: list[str]`
-(declarative visual inputs, see below) is the most recent such addition.
-Four runtime layers each own a sub-state and a hard responsibility boundary:
+Four runtime layers, each owning a sub-state and a hard responsibility
+boundary:
 
 | Layer | Writes | Owns |
 |---|---|---|
@@ -345,17 +172,6 @@ Four runtime layers each own a sub-state and a hard responsibility boundary:
 | Governor | `control_state` | retry decision + policy reason |
 | Reflection + Eval | `semantic_state` | intent, reflection, evaluation signals |
 | Outcome resolver | `outcome_state` | final outcome + answer |
-
-**Vision routing is per-attempt model selection, not a pre-loop graph
-branch.** `code_generation_node` chooses between the text and multimodal
-LLM by `bool(state.image_inputs)` on each attempt; visual inputs are
-declared once by the caller via `RuntimeRunner.run(user_request,
-image_inputs=[...])` and are task-level immutable across the loop (a
-boundary invariant in `RuntimeRunner.stream` raises if any node mutates the
-field). The previous filesystem-scan + visual-intent-regex routing has been
-removed; disambiguation between "user-declared input image" and
-"data task happens to write a PNG into the workspace" is now structural,
-not heuristic.
 
 Subsystem contracts (produces / consumes / must-not) are enforced by contract
 tests. Full detail in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and

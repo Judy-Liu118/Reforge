@@ -28,6 +28,26 @@ flowchart LR
 **RuntimeState is frozen** — no new top-level fields allowed. New state must
 flow through `ExecutionEvent` to the append-only `ExecutionEventLog`.
 
+### State evolution and vision routing
+
+`RuntimeState` evolves **only through contract tests** — the ban is on silent
+dual-write flat fields that duplicate nested sub-state (enforced by
+`reforge/tests/test_state_no_flat_fields.py`), not on new top-level inputs.
+Adding a true task-level input is permitted when it earns a payload-field
+slot in the contract test's whitelist; `image_inputs: list[str]`
+(declarative visual inputs) is the most recent such addition.
+
+**Vision routing is per-attempt model selection, not a pre-loop graph
+branch.** `code_generation_node` chooses between the text and multimodal
+LLM by `bool(state.image_inputs)` on each attempt; visual inputs are
+declared once by the caller via `RuntimeRunner.run(user_request,
+image_inputs=[...])` and are task-level immutable across the loop (a
+boundary invariant in `RuntimeRunner.stream` raises if any node mutates the
+field). The previous filesystem-scan + visual-intent-regex routing has been
+removed; disambiguation between "user-declared input image" and
+"data task happens to write a PNG into the workspace" is now structural,
+not heuristic.
+
 ---
 
 ## 2. Governor pipeline
