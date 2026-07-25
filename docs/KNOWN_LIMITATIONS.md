@@ -72,6 +72,32 @@ oracles — one structured, one stringly — and they drift.
    the trajectory test corpus by running pre/post `task_kind` on the
    same inputs and checking equivalence.
 
+### Ordering constraint the fix must respect (added 2026-07-25)
+
+Step 2 above has an unstated prerequisite: **the evaluator cannot simply
+read the typed field, because on attempt 1 it is still `None`.** The graph
+runs `evaluation → retry_decision` (`graph/workflow.py:87-88`), while
+`task_intent`'s only persistence point is `retry_decision.py:78` — so the
+one consumer that would benefit runs *before* the value exists. Root cause
+is placement: intent is a property of the request (`intent_stage.py:3`)
+but is only landed on state at the second-to-last node. The fix is to
+classify at an entry node (`capability_check` / `planner`) and write
+`semantic_state.task_intent` there; `intent_stage.py:20`'s cache makes
+every later governor resolve a hit, so the LLM call count is unchanged.
+
+Measured impact while deferred: the drift does **not** reach the final
+outcome — `resolve_outcome()` applies its intent override outside the
+event map, so for `EXPECTED_ERROR` with `exit_code != 0` all six
+`policy_action × eval_passed` combinations still return
+`EXPECTED_FAILURE`. Damage is confined to `eval_score` noise written into
+`attempts[-1]`, trajectory and memory. (For scale: the keyword list misses
+1 of the 2 `intentional` benchmark cases — `intentional_syntax_error`'s
+"故意在 print 前面加一个乱码字符让语法出错" matches no entry — and that
+case's outcome is still classified correctly.) The unshielded direction is
+the *false hit*: a `NORMAL_EXECUTION` request containing e.g. 故意包含
+skips `no_error_in_output` + `stderr_clean` (`heuristics.py:193`), and at
+`exit_code == 0` no override covers it — eval is the only gate.
+
 ### Why defer
 
 - **Scope**: schema bump (new enum + migration for persisted
