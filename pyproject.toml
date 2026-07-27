@@ -31,21 +31,21 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "langgraph>=0.2.0",
-    "openai>=1.0.0",
-    "pydantic>=2.0.0",
+    "langgraph>=1.2.5",
+    "openai>=2.42.0",
+    "pydantic>=2.13.4",
     "python-dotenv>=1.0.0",
-    "pandas>=2.0.0",
+    "pandas>=3.0.3",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
 ]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.4",
 ]
 
