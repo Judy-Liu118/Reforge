@@ -116,11 +116,20 @@ never fired and generic unrecoverability recognition remains open
 a pre-calibration evaluator that rejected correct answers; the fix was
 validated held-out (FN 42.7% → 0.0%) before run 2.
 
+Scope: BIRD failures are almost all wrong answers that exit cleanly, so this
+mechanism's trigger condition is close to absent from the corpus — what these
+runs locate is the boundary of where it applies, and workloads dominated by
+loud failures (timeouts, tracebacks) are not measured here.
+
 Full record — pre-registration, locked corpora, instrument calibration, all
 three runs: [`docs/eval/`](docs/eval/). Memory ablation (cold vs warm
 substrate, 5 seeds): no KPI reaches significance, see
 [`docs/experience_benchmark.md`](docs/experience_benchmark.md). Earlier 10-case
 descriptive snapshot: [`docs/benchmark_sample.md`](docs/benchmark_sample.md).
+
+Outside the ablation, the descriptive record on real datasets: 24 Auto-EDA
+stages across `iris` / `titanic` / `wine`, 2 recovered after a failed attempt,
+0 hard failures (single arm, no baseline comparison).
 
 ---
 

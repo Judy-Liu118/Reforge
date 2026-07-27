@@ -110,10 +110,17 @@ retry-with-reflection 在首次尝试*响亮地*失败（超时、traceback）�
 校准前的评估器，它会拒绝正确答案；该修复在 held-out 数据上验证（FN 42.7% →
 0.0%）之后才跑了 run 2。
 
+适用范围：BIRD 的失败几乎全是干净退出的错误答案，该机制的触发条件在这个语料上
+近乎不存在——这几轮运行定位的是它的适用边界；以响亮失败（超时、traceback）
+为主的工作负载在这里未被测量。
+
 完整记录——预注册、锁定语料、仪器校准和三轮运行：[`docs/eval/`](docs/eval/)。
 记忆消融（冷 vs 暖记忆基座，5 个 seed）：没有 KPI 达到统计显著，见
 [`docs/experience_benchmark.md`](docs/experience_benchmark.md)。更早的 10 用例
 描述性快照：[`docs/benchmark_sample.md`](docs/benchmark_sample.md)。
+
+消融实验之外，真实数据集上的描述性记录：`iris` / `titanic` / `wine` 共 24 个
+Auto-EDA 阶段，2 个在失败后恢复，0 次硬失败（单组，无基线对照）。
 
 ---
 
