@@ -8,6 +8,7 @@ the backend dispatch / env-var resolution / Docker CLI shape (mocked).
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -322,6 +323,17 @@ def _docker_available() -> bool:
     return True
 
 
+def _running_reforge_containers() -> set[str]:
+    """Names of currently-running reforge_run_* containers."""
+    out = subprocess.run(
+        ["docker", "ps", "--filter", "name=reforge_run_", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return {ln.strip() for ln in out.stdout.splitlines() if ln.strip()}
+
+
 @pytest.mark.docker
 @pytest.mark.skipif(
     not _docker_available(),
@@ -337,3 +349,25 @@ class TestDockerBackendIntegration:
         )
         assert result.exit_code == 0
         assert "hello from docker" in result.stdout
+
+    def test_timeout_does_not_leak_container(self, tmp_path: Path) -> None:
+        """A non-terminating script must not leave a container running after the
+        timeout kills the `docker run` client — the orphan-container leak."""
+        before = _running_reforge_containers()
+        backend = DockerBackend()
+        result = backend.execute(
+            "while True:\n    pass\n", workspace=tmp_path, timeout_s=3
+        )
+        assert result.exit_code == -1
+        time.sleep(1)  # let the force-remove settle
+        leaked = _running_reforge_containers() - before
+        assert leaked == set(), f"leaked containers: {leaked}"
+
+    def test_timeout_preserves_flushed_stdout(self, tmp_path: Path) -> None:
+        """Output streamed before a timeout kill must survive (diagnostic value)."""
+        backend = DockerBackend()
+        code = "import time\nprint('[step] started', flush=True)\ntime.sleep(30)\n"
+        result = backend.execute(code, workspace=tmp_path, timeout_s=6)
+        assert result.exit_code == -1
+        assert "[step] started" in result.stdout
+        assert "timed out" in result.stderr.lower()
