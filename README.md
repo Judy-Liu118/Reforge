@@ -78,6 +78,26 @@ buys is in [Evaluation methodology](#evaluation-methodology).
 
 ## What the governor layer adds
 
+Every execution attempt resolves through four stages; a capability denial
+returns before classification and policy ever run.
+
+```mermaid
+flowchart LR
+    E[Execution attempt] --> I[IntentStage<br/>task intent]
+    I --> C[CapabilityStage<br/>safety gate]
+    C -->|allow=False| D([DENY])
+    C -->|allow=True| CL[ClassifyStage<br/>failure_mode + repair_hint]
+    CL --> P[PolicyStage<br/>RetryPolicy + budget]
+    subgraph RDA["RuntimeDecisionAction"]
+        R([RETRY])
+        A([ACCEPT])
+        S([STOP])
+    end
+    P --> R
+    P --> A
+    P --> S
+```
+
 Both columns are this repository, one env flag apart — the same two arms the
 evaluation below measures.
 

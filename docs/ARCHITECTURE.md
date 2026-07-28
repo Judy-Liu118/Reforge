@@ -48,6 +48,32 @@ removed; disambiguation between "user-declared input image" and
 "data task happens to write a PNG into the workspace" is now structural,
 not heuristic.
 
+### Graph topology
+
+`graph/workflow.py` owns wiring only — eight nodes, two conditional edges,
+no business logic. Both conditional edges route to the same two targets, so
+every path out of the loop terminates at `final_response`:
+
+```mermaid
+flowchart LR
+    START([entry point]) --> planner
+    planner --> capability_check
+    capability_check -->|route_after_capability| code_generation
+    capability_check -->|route_after_capability| final_response
+    code_generation --> execution
+    execution --> reflection
+    reflection --> evaluation
+    evaluation --> retry_decision
+    retry_decision -->|should_retry| code_generation
+    retry_decision -->|should_retry| final_response
+    final_response --> END([finish point])
+```
+
+`execution`, `evaluation`, `reflection`, `retry_decision` and
+`final_response` are wrapped by the `wrap_*_node` emitters, which is where
+`ExecutionEvent`s are written — the node functions themselves stay
+event-agnostic.
+
 ---
 
 ## 2. Governor pipeline
@@ -56,21 +82,33 @@ The governor is the **single decision authority** for retry / accept / stop.
 Evaluation produces signals; classification interprets them; the policy stage
 makes the call. Each stage is independently testable and replaceable.
 
+`resolve()` runs after *every* execution attempt, not only failing ones —
+`ACCEPT` is the success path. A capability denial returns from the loop
+before `ClassifyStage` and `PolicyStage` execute:
+
 ```mermaid
 flowchart LR
-    Start([Failure signal arrives]) --> Intent[IntentStage<br/>classify task intent]
+    Start([Execution attempt]) --> Intent[IntentStage<br/>classify task intent]
     Intent --> Cap[CapabilityStage<br/>check safety policy]
-    Cap --> Classify[ClassifyStage<br/>determine failure_mode<br/>+ recall similar past]
+    Cap -->|allow=False| Deny[RuntimeResolution<br/>action=&quot;DENY&quot;<br/>outcome=TaskOutcome.DENIED]
+    Cap -->|allow=True| Classify[ClassifyStage<br/>determine failure_mode<br/>+ recall similar past]
     Classify --> Policy[PolicyStage<br/>decide RETRY / ACCEPT / STOP]
     Policy --> Resolution[RuntimeResolution]
 ```
+
+`RuntimeDecisionAction` has exactly three members — `RETRY`, `STOP`,
+`ACCEPT`. `"DENY"` is not one of them: `RuntimeResolution.action` is typed
+`str`, and the deny path assigns the bare string. The short-circuit itself
+rests on an unasserted convention — `engine.resolve()` re-checks
+`ctx.capability.allow` after *every* stage, and only `CapabilityStage` ever
+writes that field.
 
 | Stage | Module | Owns |
 |---|---|---|
 | `IntentStage` | `governor/intent_stage.py` | `TaskIntent` classification |
 | `CapabilityStage` | `governor/capability_stage.py` | `CapabilityDecision` via `SemanticSafetyGuard` |
 | `ClassifyStage` | `governor/classify_stage.py` | `failure_mode` + memory recall + recurring-pattern warning |
-| `PolicyStage` | `governor/policy_stage.py` | Final `PolicyDecision` |
+| `PolicyStage` | `governor/policy_stage.py` | `PolicyOutcome` (action / outcome / outcome_reason) via `RetryPolicy` |
 
 The graph node `retry_decision_node` just calls `governor.resolve()` —
 business logic lives in the governor, not in the graph.

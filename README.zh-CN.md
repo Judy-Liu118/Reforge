@@ -75,6 +75,26 @@ REFORGE_GOVERNOR_BYPASS=1 reforge "read sales.csv, calc revenue mean"
 
 ## Governor 这一层加了什么
 
+每一次执行尝试都要走完四个阶段；capability 拒绝时直接返回，分类与策略根本不会
+执行。
+
+```mermaid
+flowchart LR
+    E[一次执行尝试] --> I[IntentStage<br/>任务意图]
+    I --> C[CapabilityStage<br/>安全门]
+    C -->|allow=False| D([DENY])
+    C -->|allow=True| CL[ClassifyStage<br/>failure_mode + repair_hint]
+    CL --> P[PolicyStage<br/>RetryPolicy + 预算]
+    subgraph RDA["RuntimeDecisionAction"]
+        R([RETRY])
+        A([ACCEPT])
+        S([STOP])
+    end
+    P --> R
+    P --> A
+    P --> S
+```
+
 两列都是本仓库，相差一个环境变量——正是下方评测所测的两个实验组。
 
 | 关注点 | 朴素重试循环（`REFORGE_GOVERNOR_BYPASS=1`） | **Governor 开启** |
