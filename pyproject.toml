@@ -75,3 +75,13 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Declared explicitly rather than inherited. Ruff's *default* rule set is not
+# a stable contract: 0.16.0 widened it, which turned a green CI red across 186
+# files without a single repo commit in between (I001, UP*, BLE001, RUF*...).
+# Pinning the tool version would only postpone that; naming the rules makes the
+# lint gate depend on our decision instead of the tool's default. These four
+# were ruff's default through 0.15.x — the set this codebase was written under.
+# Widening it is a deliberate, separate change, not something a release does.
+select = ["E4", "E7", "E9", "F"]
