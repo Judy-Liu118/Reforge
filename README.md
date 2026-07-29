@@ -139,7 +139,9 @@ validated held-out (FN 42.7% → 0.0%) before run 2.
 Scope: BIRD failures are almost all wrong answers that exit cleanly, so this
 mechanism's trigger condition is close to absent from the corpus — what these
 runs locate is the boundary of where it applies, and workloads dominated by
-loud failures (timeouts, tracebacks) are not measured here.
+loud failures (timeouts, tracebacks) are not measured here. See
+[related work & positioning](docs/eval/RELATED_WORK.md) for how this null
+locates against the Reflexion and Olausson et al. results.
 
 Full record — pre-registration, locked corpora, instrument calibration, all
 three runs: [`docs/eval/`](docs/eval/). Memory ablation (cold vs warm
