@@ -19,6 +19,7 @@ Result JSONLs land in the repo root and are gitignored (run artifacts).
 
 from __future__ import annotations
 
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -29,13 +30,17 @@ from reforge.benchmark.targeted.driver import TargetedRecord, run_one_case
 from reforge.benchmark.targeted.humaneval_task import HumanEvalTask
 from reforge.benchmark.targeted.mbpp_task import MbppTask
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner
+from reforge.config import config
 
 DATASET = "mbpp"     # "mbpp" | "humaneval"
-N = 100
+N = 100               # small first pass — just to see if a weaker model triggers retries
 SEED = 0
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_RECORDS = _REPO_ROOT / f"fp_sweep_{DATASET}.jsonl"
+# Records keyed by model, so switching LLM_MODEL starts a fresh run instead of
+# resuming (and skipping) another model's cached cases.
+_MODEL_SLUG = re.sub(r"[^A-Za-z0-9._-]", "_", config.llm_model)
+_RECORDS = _REPO_ROOT / f"fp_sweep_{DATASET}_{_MODEL_SLUG}.jsonl"
 
 
 def _load_task():
