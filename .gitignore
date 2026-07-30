@@ -30,3 +30,7 @@ CLAUDE.md
 # Archives
 runs_archive_*.zip
 data_memory_polluted_*.zip
+
+# FP sweep run artifacts (scripts/fp_sweep.py) — regenerable, not versioned
+fp_sweep_*.jsonl
+llm_judge_probe_*.jsonl
