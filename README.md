@@ -132,7 +132,10 @@ Retry-with-reflection pays off where a first attempt fails *loudly* (timeout,
 traceback), not where a wrong answer exits cleanly: 30 of the governor arm's
 31 retries were quiet evaluator rejections, so the repeated-signature detector
 never fired and generic unrecoverability recognition remains open
-([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3). Run 1 measured
+([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3). More directly,
+its trigger condition — two consecutive loud failures with the same signature —
+had no raw material: loud failures are near-absent (2 / 2 / 1 attempts across
+the three runs) and no run ever produced two in a row. Run 1 measured
 a pre-calibration evaluator that rejected correct answers; the fix was
 validated held-out (FN 42.7% → 0.0%) before run 2.
 

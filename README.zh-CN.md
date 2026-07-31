@@ -126,7 +126,9 @@ flowchart LR
 retry-with-reflection 在首次尝试*响亮地*失败（超时、traceback）的地方有回报，
 在错误答案干净退出的地方没有：governor 组 31 次重试中有 30 次是安静的评估器
 拒绝，因此 repeated-signature 检测器从未触发，通用的不可恢复性识别仍是开放问题
-（[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3）。run 1 测量的是
+（[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3）。更直接地说，它的
+触发条件——连续两次相同指纹的响亮失败——连原料都不存在：响亮失败三轮各仅
+2 / 2 / 1 次，且没有任何一次运行出现连续两次。run 1 测量的是
 校准前的评估器，它会拒绝正确答案；该修复在 held-out 数据上验证（FN 42.7% →
 0.0%）之后才跑了 run 2。
 
