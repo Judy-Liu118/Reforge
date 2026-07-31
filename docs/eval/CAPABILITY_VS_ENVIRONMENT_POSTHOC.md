@@ -53,7 +53,7 @@ Only the last has any room for a memory/retry mechanism.
 | silent wrong (BIRD / MBPP, `exit 0`) | none | — | no retry fires → null |
 | crash + strong model (`deepseek-v4-pro`) | yes | almost never crashes — no trigger | null (no observable failure) |
 | crash + weak model (`qwen-turbo`) | yes | can't | retry fires → still FAILED |
-| crash + traceback carries the fix (`must_fail`) | yes, sufficient | fixes it unaided | recovers, but mechanism adds nothing |
+| crash + traceback carries the fix (`must_fail`) | yes, sufficient | fixes it unaided | recovers, mechanism adds nothing — *design premise, not a measured bucket rate; measured anchor = Phase 0 naive arm (see provenance)* |
 | environment mismatch (column / table / dtype) | yes, but not enough to pin the fix | can fix — just doesn't know *where* | RECOVERED (not 100%) |
 
 Row-by-row provenance (records, not inference):
