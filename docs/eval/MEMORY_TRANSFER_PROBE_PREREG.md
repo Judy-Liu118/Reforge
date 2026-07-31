@@ -171,3 +171,47 @@ clean confirmation of the prediction**, not a mixed outcome.
 - Any re-interpretation of the BIRD governor-vs-naive result.
 - Promotion of a case-level or single-KPI signal to a headline when the primary
   per-seed CI includes zero.
+
+## 7. Future direction — multi-step, path-dependent environments (UNMEASURED)
+
+> Recorded as a design only. NOT measured. NOT part of the locked hypothesis,
+> §1 predictions, corpus rule (§3), metric set (§4), or significance rule above,
+> none of which this section changes. No effect-direction claim is made — the
+> correct status is "unmeasured", not "expected positive". Motivated by the
+> post-hoc failure-type reading in `CAPABILITY_VS_ENVIRONMENT_POSTHOC.md`.
+
+**Task form.** A multi-step, path-dependent environment: it opens with an error,
+and the path to success needs several edits along the way, where the model's
+default preferred path disagrees with the one the environment actually permits
+(a real schema, an API quirk, a multi-step dependency).
+
+**Why it would sit in the predicted interval (§1).** The failure is
+environment-mismatch, not capability — the model *can* execute each step, it
+just does not know which path the environment allows — and the fix is not
+derivable from the error text (the traceback names the symptom, not the
+environment's actual shape). This is the opposite corner from single-function
+code generation, whose failures are capability-type (see the post-hoc note).
+
+**Construction rules (to be locked before building any case).**
+- Real structure — a genuine schema / API quirk / multi-step dependency; the
+  case is NOT reverse-engineered around one specific hint.
+- Cold-recoverable — the cold arm must be able to discover the fix on its own
+  eventually; the mechanism claim is "memory is cheaper", not "impossible
+  without memory" (per §4.3, budget=1 converts discovery cost to success rate).
+- L8 — same structural fingerprint → same root cause (as §3).
+- Labelled synthetic environment.
+
+**Anticipated risks (where this probe most likely fails).**
+- *Introspectable-sandbox collapse* (same failure mode as private-encoding): if
+  every step is discoverable from the environment, cold with enough budget finds
+  the path too, and any effect degrades to discovery-cost only — visible at
+  budget=1, null at budget=3, never a success-rate gain.
+- *Capability contamination*: if any step's difficulty is writing hard code
+  (rather than choosing the right path), a capability-type failure mixes in and
+  muddies the "pure environment-mismatch" claim. Each step's obstacle must be
+  path / order / environment-fact, not code ability.
+- *Prior leakage*: a "real API quirk" the strong model has already seen raises
+  the prior above the low-prior corner and shrinks the interval.
+- *Reverse-design leak*: multi-step makes it tempting to build the environment
+  around the hint, producing a "memorise one fact and it passes" leak rather
+  than strategy transfer (violates §3's strategy-not-value rule).
