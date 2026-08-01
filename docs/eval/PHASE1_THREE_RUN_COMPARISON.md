@@ -46,16 +46,18 @@ significant cost/attempt deltas mean "governor is more expensive," not "better."
 
 ## 3. Headline side-by-side (Δ = governor − naive)
 
-| metric | R1 Δ [95% CI] | R2 Δ [95% CI] | R3 Δ [95% CI] |
-|---|---|---|---|
-| **success_rate** | +0.0pp [−4.4, +4.4] · null | +0.0pp [−4.4, +4.4] · null | −1.0pp [−9.1, +7.1] · null |
-| first_try_rate | **−36.0pp** [−38.8, −33.2] · sig | −3.0pp [−10.1, +4.1] · null | −5.0pp [−9.4, −0.6] · sig* |
-| recovery_rate | **+50.8pp** [+46.0, +55.5] · sig | +6.5pp [−5.0, +18.0] · null | +8.9pp [−2.7, +20.6] · null |
-| attempts_per_case | +1.70 [+1.62, +1.78] · sig | +0.32 [+0.24, +0.40] · sig | +0.30 [+0.12, +0.48] · sig |
-| tokens_per_solved | **+9,854** [+9.4k, +10.3k] · sig | +1,842 [+1.0k, +2.7k] · sig | +2,707 [+1.2k, +4.2k] · sig |
+Each cell is **`governor / naive → Δ [95% CI] · verdict`** — the two operands that
+go into the subtraction shown alongside their difference, `Δ = governor − naive`.
+For the first three rows (success/first_try/recovery) the governor and naive
+operands are in %, Δ in pp; attempts is a count; tokens is a count.
 
-Absolute values (governor / naive): success_rate R1 65/65, R2 61/61, R3 61/62 %.
-tokens_per_solved R1 14,449/4,594, R2 6,457/4,615, R3 7,351/4,644.
+| metric | R1: gov / naive → Δ [95% CI] | R2: gov / naive → Δ [95% CI] | R3: gov / naive → Δ [95% CI] |
+|---|---|---|---|
+| **success_rate** | 65.0 / 65.0 → **+0.0** [−4.4, +4.4] · null | 61.0 / 61.0 → **+0.0** [−4.4, +4.4] · null | 61.0 / 62.0 → **−1.0** [−9.1, +7.1] · null |
+| first_try_rate | 29.0 / 65.0 → **−36.0** [−38.8, −33.2] · sig | 58.0 / 61.0 → −3.0 [−10.1, +4.1] · null | 56.0 / 61.0 → −5.0 [−9.4, −0.6] · sig* |
+| recovery_rate | 50.8 / 0.0 → **+50.8** [+46.0, +55.5] · sig | 6.5 / 0.0 → +6.5 [−5.0, +18.0] · null | 11.4 / 2.5 → +8.9 [−2.7, +20.6] · null |
+| attempts_per_case | 2.70 / 1.00 → +1.70 [+1.62, +1.78] · sig | 1.32 / 1.00 → +0.32 [+0.24, +0.40] · sig | 1.31 / 1.01 → +0.30 [+0.12, +0.48] · sig |
+| tokens_per_solved | 14,449 / 4,594 → **+9,854** [+9.4k, +10.3k] · sig | 6,457 / 4,615 → +1,842 [+1.0k, +2.7k] · sig | 7,351 / 4,644 → +2,707 [+1.2k, +4.2k] · sig |
 
 `*` R3 first_try is marginally significant (CI upper bound −0.6, ≈1 question);
 see §5 — it cannot come from the L3 detector (which never fired) and is best read
