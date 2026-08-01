@@ -129,8 +129,12 @@ were locked before any real-data run.
 | tokens per solved (run 3) | 4,644 | 7,351 | +2,707 [+1,199, +4,215] | **significant** — 1.6× cost |
 
 Retry-with-reflection pays off where a first attempt fails *loudly* (timeout,
-traceback), not where a wrong answer exits cleanly: 30 of the governor arm's
-31 retries were quiet evaluator rejections, so the repeated-signature detector
+traceback), not where a wrong answer exits cleanly: in run 3, 30 of the governor
+arm's 31 retries were triggered by a clean-exit attempt (exit 0, no traceback, no
+timeout) that the evaluator rejected on a surface signal — an empty result set,
+or a value its heuristics flagged as suspicious — not by verifying the answer,
+which a rule-based evaluator with no gold access cannot do. All 30 turned out
+comparator-wrong, but with no crash to key on the repeated-signature detector
 never fired and generic unrecoverability recognition remains open
 ([`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3). More directly,
 its trigger condition — two consecutive loud failures with the same signature —

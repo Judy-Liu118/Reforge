@@ -124,8 +124,12 @@ flowchart LR
 | tokens per solved（run 3） | 4,644 | 7,351 | +2,707 [+1,199, +4,215] | **显著** —— 1.6 倍成本 |
 
 retry-with-reflection 在首次尝试*响亮地*失败（超时、traceback）的地方有回报，
-在错误答案干净退出的地方没有：governor 组 31 次重试中有 30 次是安静的评估器
-拒绝，因此 repeated-signature 检测器从未触发，通用的不可恢复性识别仍是开放问题
+在错误答案干净退出的地方没有：run 3 里 governor 组的 31 次重试中，有 30 次是由
+干净退出（exit 0、无 traceback、无超时）的 attempt 触发的——评估器是凭表面信号拒
+绝它们的（结果集为空、或某个值被启发式判为可疑），而非验证了答案正确性：规则型、
+无 gold 访问权的评估器做不到这件事。这 30 次事后经 comparator 确认确为错答，但既没
+有崩溃信号可抓，repeated-signature 检测器就从未触发，通用的不可恢复性识别仍是开放
+问题
 （[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) L3）。更直接地说，它的
 触发条件——连续两次相同指纹的响亮失败——连原料都不存在：响亮失败三轮各仅
 2 / 2 / 1 次，且没有任何一次运行出现连续两次。run 1 测量的是
