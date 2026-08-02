@@ -43,6 +43,11 @@ class RuntimeRunner:
         # Falls back to per-task session_id when running in single-shot mode.
         self._conversation_id = conversation_id or self._session_id
         # Always maintain an active log so emitter overrides are never skipped.
+        # Assembly-time architectural guarantee (not a plain null-default): this
+        # always-active log is what makes control_state.retry_count a *projection*
+        # of the event log — see OWNERSHIP.md "Projection vs Mirror vs Dual-Write".
+        # Under build_graph(event_log=None) the guarantee lapses and retry_count
+        # degrades to a node-local counter; keep that in mind when refactoring here.
         self._event_log = event_log if event_log is not None else ExecutionEventLog()
         # Materialise substrate once so graph nodes (read) and write-back (write)
         # share the same instance — especially important for SQLite where the
