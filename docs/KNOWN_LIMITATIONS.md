@@ -1,5 +1,7 @@
 # Known Limitations
 
+English | [简体中文](KNOWN_LIMITATIONS.zh-CN.md)
+
 Architectural debt the team has identified, evaluated, and deliberately
 deferred. Each entry names the smell, the correct fix, and why it isn't
 being applied right now. If you're tempted to "just patch" any of these
@@ -937,6 +939,22 @@ exist anywhere in the second task. Raw evidence in
 line visible in the persisted per-attempt code — see the `code.txt`
 persistence entry in `CHANGELOG.md`).
 
+### Update (2026-08-02): admission gate tightened; `domain` demoted
+
+The admission gate described above changed. `recall_similar` now admits on
+the **existence of a qualifying structural signal** (failure_mode /
+root_cause / a specific fingerprint field), not on `structural > 0`, and
+`domain` no longer grants eligibility — it is a ranking tie-breaker only.
+Rationale: in the current single-language scope `domain` is near-constant
+across records, so as an admission condition it degenerates into an
+always-true predicate (see the `_QUALIFYING_FINGERPRINT_KEYS` note in
+`execution_memory.py`, and L10 for the sibling planner/CLI path that was
+NOT tightened). This does **not** close L8: the confirmed case still
+qualifies on `error_class` + `root_cause`, so the shape-not-identity
+mismatch stands. The Symptom text above is preserved as written; where it
+says the gate "requires a non-zero structural score … same domain,"
+`domain` no longer contributes to admission (only to ranking).
+
 ### What actually prevents this from corrupting outcomes
 
 Not recall precision — codegen's treatment of `repair_hint` as loose
@@ -1064,5 +1082,75 @@ was handed.
 - ❌ Reading this as evidence that self-heal "doesn't work". The same run
   recovered every other `csv_recovery` case correctly; the defect is in
   where the boundary sits, not in the loop.
+
+---
+
+## L10. Two memory-recall paths use divergent admission strategies
+
+### Symptom
+
+Two independent recall subsystems gate admission differently:
+
+| Path | Entry | Admission | Feeds |
+|---|---|---|---|
+| repair_hint | `ExecutionMemory.recall_similar` (`reforge/memory/execution_memory.py`) | must match ≥1 *qualifying* structural signal (failure_mode / root_cause / a specific fingerprint field); `domain` + request-word overlap are ranking tie-breakers only | `ClassifyStage` → `ctx.repair_hint` → the next retry's codegen prompt |
+| planner / CLI | `MemoryRetriever.search` (`reforge/memory/retrieval.py`) | `score > 0`, where request-word overlap (`×0.3`), tag overlap (`×0.5`), and `domain` (`+3.0`) each add to that score **independently** — a candidate can be admitted on low-specificity signals alone | `CompositeMemorySubstrate.recall / recall_for_planning` → `PlannerMemoryContext.build`; `cli/commands/history.py` display |
+
+As of 2026-08-02 the repair_hint path was tightened to admit on
+structural-signal existence (方案甲, see L8's dated update). The
+planner/CLI path was deliberately left on `score > 0`.
+
+### Why the two were NOT unified (the premise, not just the verdict)
+
+- **Consumer blast radius differs.** `recall_similar`'s top hit is
+  forwarded verbatim as `repair_hint` into the next retry's codegen prompt
+  — a wrong record can steer generated code (that is L8). `search`'s output
+  only (a) prepends a short "past experience" summary to the *planner*
+  prompt (`planner_context.py` truncates each record to ~60 chars) and (b)
+  renders a human-facing CLI history list. Both are advisory context a
+  human or the planner reads, not a literal patch — the noise tolerance is
+  materially higher, so the same admission laxity costs less there.
+- **The query interface is not shared.** `search` scores against a
+  free-form text query and carries no typed `failure_mode` /
+  `problem_signature` argument, so the qualifier concept ("match a
+  structural signal") does not map onto it without also changing its
+  signature and every call site.
+- **Unifying requires mirroring a third scorer.** `retrieval._score` is
+  deliberately duplicated by `sqlite_substrate._score` ("mirrors
+  MemoryRetriever._score() so retrieval quality is identical across
+  backends"). Any admission change in `retrieval.py` must be applied to
+  both or the JSONL and SQLite backends rank differently — a larger,
+  separately-testable change than the repair_hint fix was.
+
+### Right fix (deferred)
+
+If the planner/CLI path is later shown to inject misleading context, give
+`MemoryRetriever.search` (and its `sqlite_substrate` mirror) the same
+qualifier/tie-breaker split: admit on a structural-signal match, demote
+`domain` and keyword/tag overlap to ranking only.
+
+### Why defer
+
+- No measured evidence the planner/CLI noise changes outcomes; the planner
+  treats these records as loose hints and truncates them heavily.
+- The change spans two mirrored scorers plus `search`'s signature and call
+  sites — out of scope for the repair_hint fix, which was intentionally
+  minimal.
+
+### Trigger to revisit
+
+- A measured planning-quality axis shows low-specificity recall degrading
+  plans, or
+- the CLI history view is repurposed as an automated signal rather than a
+  human-read display.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Copy-pasting `recall_similar`'s gate into `search` without also
+  updating `sqlite_substrate._score`. Silently diverges the two backends —
+  the exact failure the mirror comment exists to prevent.
+- ❌ Raising a bare numeric threshold (`score > K`) in `search` instead of
+  separating qualifier from tie-breaker. Reintroduces the coupling between
+  weight tuning and admission that 方案甲 removed on the repair_hint path.
 
 ---

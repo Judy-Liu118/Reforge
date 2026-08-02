@@ -82,12 +82,15 @@ class ExecutionMemory:
         Uses weighted scoring instead of hard failure_mode filtering,
         so partial matches on problem_signature still surface useful records.
 
-        Admission requires a non-zero *structural* score — a shared
-        failure_mode or fingerprint field. Request-text overlap alone cannot
-        admit a record: every English request shares "the"/"and"/"print", so a
-        keyword-only threshold let an unrelated TimeoutError record ride into
-        the top-3 (and potentially into `records[0]`, which ClassifyStage
-        forwards as the repair_hint) on function words alone.
+        Admission requires a match on at least one *qualifying* structural
+        signal — failure_mode, root_cause, or a specific fingerprint field
+        (error_class / missing_module / missing_key / missing_file /
+        undefined_name). Low-specificity signals — request-text overlap and
+        `domain` — only order candidates that already qualified; they cannot
+        admit a record on their own. Without this gate an unrelated
+        TimeoutError record rode into the top-3 (and potentially into
+        `records[0]`, which ClassifyStage forwards as the repair_hint) on
+        shared function words alone.
         """
         if not self._path.exists():
             return []
@@ -102,8 +105,8 @@ class ExecutionMemory:
                 if not line:
                     continue
                 rec = ExecutionRecord.model_validate_json(line)
-                structural, keyword = _score(rec, query_words, failure_mode, sig)
-                if structural > 0:
+                qualifies, structural, keyword = _score(rec, query_words, failure_mode, sig)
+                if qualifies:
                     results.append((structural + keyword, rec))
 
         results.sort(key=lambda x: x[0], reverse=True)
@@ -134,48 +137,74 @@ def _keyword_score(query_words: set[str], rec_words: set[str]) -> float:
     return 2.0 * shared / (len(query_words) + len(rec_words)) * _KEYWORD_WEIGHT
 
 
+# Fingerprint fields specific enough that a match grants a record eligibility
+# to be recalled. failure_mode and root_cause (scored below) are qualifiers
+# too. `domain` and request-word overlap are deliberately NOT here — they only
+# order candidates that already qualified.
+#
+# No "error_type" entry: FailureFingerprint.to_dict() used to emit it as an
+# alias of error_class, so weighting both scored one signal twice.
+#
+# Why `domain` is excluded (the premise, not just the verdict): this runtime's
+# scope is narrowed to Python script generation, so `domain` is effectively
+# constant ("python"/"pandas"/…) across nearly every stored record. Used as an
+# admission condition it degenerates into an always-true predicate and would
+# admit structurally-unrelated records. It stays a ranking tie-breaker only.
+# If the scope later widens to multiple languages, `domain`'s specificity rises
+# again and this qualifier/tie-breaker split must be re-evaluated.
+_QUALIFYING_FINGERPRINT_KEYS: tuple[tuple[str, float], ...] = (
+    ("error_class", 4.0),
+    ("missing_module", 5.0),
+    ("missing_key", 4.0),
+    ("missing_file", 3.0),
+    ("undefined_name", 3.0),
+)
+
+
 def _score(
     rec: ExecutionRecord,
     query_words: set[str],
     failure_mode: str,
     sig: dict,
-) -> tuple[float, float]:
-    """Score *rec* against the query as (structural, keyword).
+) -> tuple[bool, float, float]:
+    """Score *rec* against the query as (qualifies, structural, keyword).
 
-    Kept separate because only the structural half is evidence that the stored
-    repair applies here; the keyword half is a tie-breaker. `recall_similar`
-    admits on structural alone and ranks on the sum.
+    `qualifies` is the admission gate: True iff the record matches at least one
+    *qualifying* structural signal (failure_mode / root_cause / a
+    _QUALIFYING_FINGERPRINT_KEYS field). `structural` and `keyword` are the
+    ranking contributions — `recall_similar` admits on `qualifies` and ranks on
+    `structural + keyword`. Returned separately so a record's position can be
+    traced back to structural vs text-overlap evidence.
     """
-    score = 0.0
+    qualifies = False
+    structural = 0.0
     rec_sig = rec.problem_signature
 
-    # failure_mode match
+    # failure_mode match — a qualifier
     if rec.failure_mode == failure_mode:
-        score += 5.0
+        qualifies = True
+        structural += 5.0
     elif failure_mode and (failure_mode in rec.failure_mode or rec.failure_mode in failure_mode):
-        score += 2.0
+        qualifies = True
+        structural += 2.0
 
-    # Structured fingerprint exact matches (highest precision).
-    # No "error_type" entry: FailureFingerprint.to_dict() used to emit it as an
-    # alias of error_class, so weighting both scored one signal twice.
-    _pairs = [
-        ("error_class", 4.0),
-        ("missing_module", 5.0),
-        ("missing_key", 4.0),
-        ("missing_file", 3.0),
-        ("undefined_name", 3.0),
-    ]
-    for key, weight in _pairs:
+    # Structured fingerprint exact matches (highest precision) — qualifiers.
+    for key, weight in _QUALIFYING_FINGERPRINT_KEYS:
         qv = sig.get(key)
         rv = rec_sig.get(key)
         if qv and rv and qv == rv:
-            score += weight
+            qualifies = True
+            structural += weight
 
-    # domain + root_cause structural match
+    # root_cause structural match — a qualifier
     if sig.get("root_cause") and sig["root_cause"] == rec_sig.get("root_cause"):
-        score += 3.0
+        qualifies = True
+        structural += 3.0
+
+    # domain match — ranking tie-breaker only (see _QUALIFYING_FINGERPRINT_KEYS
+    # note): too low-specificity in the current single-language scope to admit.
     if sig.get("domain") and sig["domain"] == rec_sig.get("domain"):
-        score += 2.0
+        structural += 2.0
 
     keyword = _keyword_score(query_words, set(rec.request.lower().split()))
-    return score, keyword
+    return qualifies, structural, keyword

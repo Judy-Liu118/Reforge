@@ -234,6 +234,72 @@ def test_persisted_error_type_alias_still_matches_on_error_class(tmp_path: Path)
     assert results[0].repair_strategy == "introspect df.columns first"
 
 
+def test_domain_alone_does_not_admit(tmp_path: Path) -> None:
+    """A shared `domain` is not evidence that a stored repair applies (方案甲).
+
+    `domain` is a ranking tie-breaker, not a qualifier: in this single-language
+    scope it is near-constant across records, so admitting on it alone would let
+    a structurally-unrelated repair ride in as records[0] — the value
+    ClassifyStage forwards as the repair_hint. The record below overlaps the
+    query ONLY on domain: different failure_mode, error_class, root_cause, and
+    no shared request words. It must not be recalled.
+
+    Rollback guard: were `domain` a qualifier again (admission on
+    structural > 0), its +2.0 weight would admit this record and this assertion
+    would fail. That failure-on-rollback is what makes the test meaningful.
+    """
+    mem = _mem(tmp_path)
+    mem.record(
+        request="alpha beta gamma delta",
+        outcome="RECOVERED",
+        failure_mode="timeout",
+        repair_strategy="JUNK — matches on domain only",
+        problem_signature={"domain": "pandas", "error_class": "TimeoutError",
+                           "root_cause": "timeout"},
+    )
+
+    results = mem.recall_similar(
+        "epsilon zeta eta theta",
+        failure_mode="execution_error",
+        problem_signature={"domain": "pandas", "error_class": "KeyError",
+                           "root_cause": "missing_key", "missing_key": "revenue"},
+    )
+    assert results == []
+
+
+def test_domain_breaks_ties_among_qualified(tmp_path: Path) -> None:
+    """Among candidates that ALREADY qualified, a domain match orders them.
+
+    Both records qualify on an exact failure_mode and share identical request
+    text (equal keyword score); they differ only in `domain`. The one whose
+    domain matches the query ranks first.
+
+    Honest caveat: unlike test_domain_alone_does_not_admit, this test does NOT
+    fail if the qualifier/tie-breaker change is rolled back — `domain`'s +2.0
+    weight feeds the ranking score in BOTH regimes, so the ordering is
+    identical either way. It is a regression guard that `domain` keeps
+    influencing rank, not a guard on the admission split itself.
+    """
+    mem = _mem(tmp_path)
+    mem.record(
+        request="read demo.csv and sum revenue",
+        outcome="RECOVERED", failure_mode="execution_error",
+        repair_strategy="domain-match", problem_signature={"domain": "pandas"},
+    )
+    mem.record(
+        request="read demo.csv and sum revenue",
+        outcome="RECOVERED", failure_mode="execution_error",
+        repair_strategy="domain-mismatch", problem_signature={"domain": "numpy"},
+    )
+
+    results = mem.recall_similar(
+        "read demo.csv and sum revenue",
+        failure_mode="execution_error",
+        problem_signature={"domain": "pandas"},
+    )
+    assert [r.repair_strategy for r in results] == ["domain-match", "domain-mismatch"]
+
+
 def test_keyword_overlap_breaks_ties(tmp_path: Path) -> None:
     """When failure_mode matches both records, keyword overlap decides ordering."""
     mem = _mem(tmp_path)
