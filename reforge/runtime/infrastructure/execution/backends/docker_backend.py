@@ -1,13 +1,20 @@
 """DockerBackend — execute code inside a docker container.
 
-Provides filesystem / network / cpu / memory isolation that SubprocessBackend
-cannot. Uses the docker CLI directly so we don't take a hard dependency on
-the docker python SDK.
+Isolates the host far better than SubprocessBackend: network, cpu, memory and
+pid caps, no Linux capabilities, and a filesystem view narrowed to the mounted
+workspace. It is not a jail — the container root filesystem is writable and
+the process runs as root inside it; see the class docstring for what is left
+open on purpose. Uses the docker CLI directly so we don't take a hard
+dependency on the docker python SDK.
 
 Caller contract:
-  - constructor verifies docker is callable (raises DockerUnavailableError)
+  - constructor verifies docker is callable unless verify_on_init=False
+    (raises DockerUnavailableError)
   - execute() returns ExecutionOutput exactly like SubprocessBackend
-  - timeout is enforced by `docker run`'s own kill via subprocess.run timeout
+  - timeout is enforced by naming the container and force-removing it once
+    subprocess.run's timeout fires. That timeout kills only the `docker run`
+    client — never the container — so the explicit removal is what actually
+    stops the work.
 """
 
 from __future__ import annotations
@@ -30,20 +37,25 @@ class DockerBackend:
 
     Defaults are deliberately conservative:
       - python:3.11-slim image
-      - --network=none           (no network)
-      - --memory=512m            (RAM cap)
-      - --cpus=1                 (CPU cap)
-      - --pids-limit=128         (fork-bomb guard)
-      - -v <workspace>:/work     (writable workspace round-trip)
+      - --network=none                    (no network)
+      - --memory=512m                     (RAM cap)
+      - --cpus=1                          (CPU cap)
+      - --pids-limit=128                  (fork-bomb guard)
+      - --cap-drop=ALL                    (no Linux capabilities)
+      - --security-opt=no-new-privileges  (no setuid escalation)
+      - --name reforge_run_<uuid>         (so a timeout can force-remove it)
+      - -e PYTHONUNBUFFERED=1             (stdout survives a timeout kill)
+      - -v <workspace>:/work              (writable workspace round-trip)
 
-    The container root filesystem is WRITABLE — isolation is limited to the
-    network / memory / cpu / pids caps above. A read-only root is a deliberate
-    non-goal: in a --network=none, one-shot --rm container the marginal gain
-    over those caps is small, while --read-only breaks the many data-analysis
-    scripts that write /tmp or ~/.cache. If this backend is ever pointed at
-    genuinely adversarial code, harden as a SET (--read-only --tmpfs /tmp plus
-    --user / --cap-drop=ALL / --security-opt), not by adding --read-only alone
-    to a container that still runs as root.
+    The container root filesystem is WRITABLE and the process still runs as
+    root inside the container — isolation is what the caps above buy, nothing
+    more. A read-only root is a deliberate non-goal: in a --network=none,
+    one-shot --rm container the marginal gain over those caps is small, while
+    --read-only breaks the many data-analysis scripts that write /tmp or
+    ~/.cache. If this backend is ever pointed at genuinely adversarial code,
+    the hardening that remains (--read-only --tmpfs /tmp, --user) has to land
+    as a SET: --user without a writable output path breaks every script that
+    writes a file, and --read-only alone still leaves a root process.
     """
 
     name = "docker"
@@ -110,6 +122,13 @@ class DockerBackend:
             f"--memory={self._memory}",
             f"--cpus={self._cpus}",
             f"--pids-limit={self._pids_limit}",
+            # Pure-Python analysis code needs no Linux capabilities, and under
+            # --network=none the ones worth having are unreachable anyway.
+            # no-new-privileges closes the setuid escalation path. Neither
+            # narrows what the workspace mount already allows — they only
+            # remove privileges nothing here was using.
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
             "-v", f"{workspace.resolve()}:/work",
             "-w", "/work",
             self._image,

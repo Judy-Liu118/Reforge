@@ -208,6 +208,8 @@ class TestDockerBackendCommandShape:
         assert "--memory=512m" in cmd
         assert "--cpus=1" in cmd
         assert "--pids-limit=128" in cmd
+        assert "--cap-drop=ALL" in cmd
+        assert "--security-opt=no-new-privileges" in cmd
         assert "python:3.11-slim" in cmd
         # Workspace must be mounted to /work and used as -w
         assert any(c.startswith("-v") for c in cmd)
@@ -313,6 +315,15 @@ class TestSandboxExecutorBackendSelection:
 # ---------------------------------------------------------------------------
 # Real docker integration — runs only when docker is actually installed.
 # Marked so CI can skip without docker.
+#
+# A skip keeps a run green, so tests that guard something important can stop
+# guarding it without anyone noticing. The sentinel below exists to make that
+# audible — but note the trap it had to avoid: a guard against silent skipping
+# is worthless if the guard itself can silently skip. It must therefore carry
+# the same `docker` mark as the tests it protects, or `-m docker` deselects it
+# and the empty run it was written to detect passes unremarked. When adding a
+# guard here, check that the selection which would omit everything else does
+# not also omit the guard.
 # ---------------------------------------------------------------------------
 
 

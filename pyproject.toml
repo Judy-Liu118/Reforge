@@ -67,7 +67,10 @@ exclude = ["reforge.tests*", "tests*", "scripts*"]
 [tool.pytest.ini_options]
 testpaths = ["reforge/tests"]
 python_files = ["test_*.py"]
-addopts = ["-q", "--strict-markers"]
+# -rs: always print WHY tests were skipped. Without it a skip is invisible in
+# quiet mode, so a suite that silently stopped exercising something still reads
+# as green — the same blind spot that hid the docker tests' status in CI.
+addopts = ["-q", "-rs", "--strict-markers"]
 markers = [
     "docker: marks tests that require a working docker daemon (skipped otherwise)",
 ]
