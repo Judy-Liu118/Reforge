@@ -7,6 +7,7 @@ the backend dispatch / env-var resolution / Docker CLI shape (mocked).
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -332,6 +333,30 @@ def _running_reforge_containers() -> set[str]:
         timeout=10,
     )
     return {ln.strip() for ln in out.stdout.splitlines() if ln.strip()}
+
+
+@pytest.mark.docker
+@pytest.mark.skipif(
+    os.environ.get("REFORGE_REQUIRE_DOCKER") != "1",
+    reason="only enforced where the environment declares docker mandatory",
+)
+def test_docker_is_available_where_required() -> None:
+    """Guard: where docker is declared mandatory, its absence must fail loudly.
+
+    The integration tests below skip themselves when docker is missing, and a
+    skip keeps the run green — so an environment that lost docker would go on
+    reporting success while testing nothing. This test converts that silence
+    into a failure wherever REFORGE_REQUIRE_DOCKER=1 is set (CI), and stays
+    skipped everywhere else (local machines without docker are unaffected).
+
+    Deliberately carries the `docker` mark so `-m docker` selects it: that is
+    the very run whose emptiness it exists to detect.
+    """
+    assert _docker_available(), (
+        "REFORGE_REQUIRE_DOCKER=1 but docker is unavailable — the docker "
+        "integration tests would have skipped silently, leaving the run green "
+        "with nothing actually exercised."
+    )
 
 
 @pytest.mark.docker

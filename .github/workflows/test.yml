@@ -33,6 +33,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test]"
 
+      # The runner image ships Docker Client + Server, but its docs make no
+      # promise about the daemon being up. Print the versions so that fact is
+      # evidence in the log rather than an assumption, and so a dead daemon
+      # fails here instead of quietly turning the docker tests into skips.
+      - name: Show docker version
+        run: docker version
+
       - name: Run pytest
         env:
           # LLMClient passes config.llm_api_key explicitly to OpenAI(); on CI
@@ -44,7 +51,19 @@ jobs:
           LLM_API_KEY: "dummy-for-unit-tests"
           OPENAI_API_KEY: "dummy-for-unit-tests"
         run: |
-          pytest reforge/tests -q
+          pytest reforge/tests -rs
+
+      # Run the docker-marked tests again on their own. The quiet main run
+      # cannot tell "3 passed" from "3 skipped" at a glance, and a fully
+      # skipped selection still exits 0 — so the guarantee is asserted here,
+      # verbosely, where PASSED/SKIPPED is printed per test. REFORGE_REQUIRE_DOCKER
+      # additionally arms test_docker_is_available_where_required, which turns a
+      # missing daemon into a failure instead of a silent empty run.
+      - name: Docker integration tests (explicit)
+        env:
+          REFORGE_REQUIRE_DOCKER: "1"
+        run: |
+          pytest reforge/tests -m docker -v
 
   lint:
     name: ruff
