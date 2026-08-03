@@ -11,6 +11,8 @@ Caller contract:
   - constructor verifies docker is callable unless verify_on_init=False
     (raises DockerUnavailableError)
   - execute() returns ExecutionOutput exactly like SubprocessBackend
+  - execute() writes nothing into the caller's workspace: the program is piped
+    to `python -` over stdin, so a file named _script.py in there is safe
   - timeout is enforced by naming the container and force-removing it once
     subprocess.run's timeout fires. That timeout kills only the `docker run`
     client — never the container — so the explicit removal is what actually
@@ -45,6 +47,8 @@ class DockerBackend:
       - --security-opt=no-new-privileges  (no setuid escalation)
       - --name reforge_run_<uuid>         (so a timeout can force-remove it)
       - -e PYTHONUNBUFFERED=1             (stdout survives a timeout kill)
+      - -i + `python -`                   (program piped in; nothing written
+                                           into the caller's workspace)
       - -v <workspace>:/work              (writable workspace round-trip)
 
     The container root filesystem is WRITABLE and the process still runs as
@@ -106,9 +110,6 @@ class DockerBackend:
         workspace: Path,
         timeout_s: int,
     ) -> ExecutionOutput:
-        script_path = workspace / "_script.py"
-        script_path.write_text(code, encoding="utf-8")
-
         # Named so the timeout branch can force-remove the container: subprocess
         # timeout only kills the `docker run` client, leaving the container
         # running detached. PYTHONUNBUFFERED so the child streams stdout in real
@@ -116,6 +117,8 @@ class DockerBackend:
         container_name = f"reforge_run_{uuid.uuid4().hex[:12]}"
         cmd = [
             "docker", "run", "--rm",
+            # -i keeps stdin attached so the program can be piped in below.
+            "-i",
             "--name", container_name,
             "-e", "PYTHONUNBUFFERED=1",
             f"--network={self._network}",
@@ -132,13 +135,20 @@ class DockerBackend:
             "-v", f"{workspace.resolve()}:/work",
             "-w", "/work",
             self._image,
-            "python", "/work/_script.py",
+            # Read the program from stdin rather than a file inside the mounted
+            # workspace. Writing _script.py there overwrote — and then deleted —
+            # any user file of that name, so a single run could destroy real
+            # work. The cost is cosmetic: tracebacks name the frame "<stdin>"
+            # instead of a path. Nothing downstream parses that frame; the
+            # fingerprint parser reads the exception line only.
+            "python", "-",
         ]
 
         start = time.perf_counter()
         try:
             proc = subprocess.run(
                 cmd,
+                input=code,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -175,9 +185,6 @@ class DockerBackend:
                 exit_code=TIMEOUT_EXIT_CODE,
                 duration_ms=round(duration_ms, 2),
             )
-        finally:
-            if script_path.exists():
-                script_path.unlink()
 
     @staticmethod
     def _force_remove(container_name: str) -> None:

@@ -92,9 +92,24 @@ class TestSubprocessBackend:
         assert result.exit_code == 0
         assert "hi from subprocess" in result.stdout
 
-    def test_cleans_up_script_after_run(self, tmp_path: Path) -> None:
+    def test_leaves_a_same_named_user_file_untouched(self, tmp_path: Path) -> None:
+        """The backend must not disturb a user file called _script.py.
+
+        SubprocessBackend already writes its program to a tempfile outside the
+        workspace, so this holds today and the change that prompted it touched
+        only DockerBackend. It is asserted here anyway because the assertion it
+        replaces — _script.py absent after a run — was vacuous: a backend that
+        never creates the file satisfies it while still being free to destroy an
+        existing one.
+        """
+        victim = tmp_path / "_script.py"
+        original = "# a real user file, not ours\n"
+        victim.write_text(original, encoding="utf-8")
+
         SubprocessBackend().execute("print(1)", workspace=tmp_path, timeout_s=5)
-        assert not (tmp_path / "_script.py").exists()
+
+        assert victim.exists(), "the run deleted a user file named _script.py"
+        assert victim.read_text(encoding="utf-8") == original
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +249,22 @@ class TestDockerBackendCommandShape:
         assert result.exit_code == -1
         assert "timed out" in result.stderr.lower()
 
-    def test_execute_cleans_up_script_after_run(self, tmp_path: Path) -> None:
+    def test_execute_leaves_a_same_named_user_file_untouched(
+        self, tmp_path: Path
+    ) -> None:
+        """A user file called _script.py must survive a run intact.
+
+        The backend used to write the generated program to <workspace>/_script.py
+        and unlink it in a finally block, so running inside a project that owned
+        that filename overwrote the file and then deleted it. The program is piped
+        over stdin now. The assertion this replaces — that _script.py was *absent*
+        afterwards — is satisfied vacuously by a backend that never writes it, and
+        would not have caught the destruction it appeared to guard against.
+        """
+        victim = tmp_path / "_script.py"
+        original = "# a real user file, not ours\n"
+        victim.write_text(original, encoding="utf-8")
+
         with patch(
             "reforge.runtime.infrastructure.execution.backends.docker_backend"
             ".subprocess.run",
@@ -245,7 +275,9 @@ class TestDockerBackendCommandShape:
             DockerBackend(verify_on_init=False).execute(
                 "print(1)", workspace=tmp_path, timeout_s=5
             )
-        assert not (tmp_path / "_script.py").exists()
+
+        assert victim.exists(), "the run deleted a user file named _script.py"
+        assert victim.read_text(encoding="utf-8") == original
 
 
 # ---------------------------------------------------------------------------

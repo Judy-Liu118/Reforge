@@ -380,3 +380,61 @@ class TestExecutionMemoryScoringWithFingerprint:
         )
         assert results, "Should find at least one record"
         assert results[0].problem_signature.get("error_class") == "KeyError"
+
+
+# ---------------------------------------------------------------------------
+# Script-location independence — guards the DockerBackend stdin decision.
+# ---------------------------------------------------------------------------
+
+_TB_PANDAS_FROM_FILE = """\
+Traceback (most recent call last):
+  File "/work/_script.py", line 4, in <module>
+    print(df["revenue"].sum())
+  File "/usr/lib/python3.11/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/usr/lib/python3.11/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'revenue'
+"""
+
+_TB_PANDAS_FROM_STDIN = """\
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+    print(df["revenue"].sum())
+  File "/usr/lib/python3.11/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/usr/lib/python3.11/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'revenue'
+"""
+
+
+class TestFingerprintIgnoresScriptLocation:
+    """DockerBackend pipes the program to `python -`, so the user frame reads
+    `File "<stdin>"` instead of a path under the workspace. That change rested on
+    a reading of this parser — that no fingerprint field derives from the user
+    frame. These tests assert it instead of trusting the reading.
+
+    Deliberately not run through a real container: python:3.11-slim ships no
+    pandas, and the file-based mode no longer exists to compare against. Two
+    tracebacks differing only in the user frame isolate exactly the claim.
+    """
+
+    def test_same_fingerprint_regardless_of_user_frame(self) -> None:
+        from_file = extract_fingerprint(_TB_PANDAS_FROM_FILE, error_type="KeyError")
+        from_stdin = extract_fingerprint(_TB_PANDAS_FROM_STDIN, error_type="KeyError")
+        assert from_file.to_dict() == from_stdin.to_dict()
+
+    def test_fingerprint_is_not_vacuously_equal(self) -> None:
+        """Equality would also hold if both sides parsed to nothing — pin the values.
+
+        `domain` is the field worth watching: it is inferred by scanning the whole
+        traceback, so it is the one place the user frame could have leaked in. It
+        resolves to "pandas" off the site-packages frames, which stdin leaves alone.
+        """
+        d = extract_fingerprint(_TB_PANDAS_FROM_STDIN, error_type="KeyError").to_dict()
+        assert d["error_class"] == "KeyError"
+        assert d["missing_key"] == "revenue"
+        assert d["root_cause"] == "missing_key"
+        assert d["execution_phase"] == "runtime"
+        assert d["domain"] == "pandas"
