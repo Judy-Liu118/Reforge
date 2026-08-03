@@ -1172,6 +1172,14 @@ escalation. Two gaps remain, and neither closes on its own:
 The second is the larger one: the backend isolates the host *around* the
 workspace while handing over the workspace itself — the part with value in it.
 
+Worth recording how long that read wrong: the mount was cited as *evidence of*
+isolation (`full (-v workspace:/work)` in the architecture table) while the
+same module's class docstring stated the root filesystem was writable. The
+identical misunderstanding sat in three places — module docstring, class
+docstring, architecture table — so it was not a typo but what was actually
+believed at the time, and nothing in the project compares two descriptions of
+one thing for agreement. A contradiction survives as long as no one reads both.
+
 ### Why they cannot land separately
 
 - **`--user` alone breaks writes.** The mount is owned on the host by the
@@ -1301,5 +1309,113 @@ the defect it closes.
   poisoning for a systematic loss of typing on non-traceback stderr.
 - ❌ Treating the stdin change as having fixed this. It removed one source of
   poisoned paths on one backend; the defect itself is untouched.
+
+---
+
+## L13. The subprocess backend hands the runtime's entire environment — credentials included — to generated code
+
+### Symptom
+
+`SubprocessBackend`
+(`reforge/runtime/infrastructure/execution/backends/subprocess_backend.py`)
+builds the child environment as:
+
+```python
+child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+```
+
+Every variable the runtime holds — `DASHSCOPE_API_KEY`, `VISION_LLM_API_KEY`,
+`TAVILY_API_KEY`, `OPENAI_API_KEY`, and anything else in the shell that started
+it — is visible to LLM-generated code. Nothing filters it. This is the default
+backend.
+
+### The risk model is not "hostile code"
+
+Generated code does not have to be adversarial to leak a key. A single
+`print(os.environ)` while debugging, a `traceback` that renders locals, or a
+library that echoes its configuration is enough. The realistic trigger is
+ordinary, not malicious.
+
+Where it goes from there — traced, not assumed:
+
+| Sink | Carries the value? |
+|---|---|
+| stdout → `RuntimeState.stdout` → CLI display | yes, in memory and on screen |
+| tracing span (`observability/tracing/collector.py:51`) | **no** — records `stdout={len} chars`, the length only |
+| `ExecutionMemory.record(...)` | **no** — the signature has no `stdout` parameter |
+| **stderr → `traceback`** | **yes, and this is the serious one** |
+
+The last row is the path that matters. `execution_node` assigns
+`traceback = result.stderr` on non-zero exit; `ExecutionMemory.record()` takes
+`traceback=` and persists it to `data/execution_memory.jsonl`. From there
+`recall_similar` can surface it as a `repair_hint`, which is injected verbatim
+into the next retry's codegen prompt — and that prompt goes to an external LLM
+provider. A credential printed to stderr therefore reaches disk, survives the
+session, and can be transmitted off-host on a later run.
+
+### The finding this whole item rests on
+
+**Generated code has no need of any credential.** Verified, not assumed:
+
+- `reforge/models/prompts/templates.py` contains no instruction that generated
+  code read an API key or environment variable (no matches).
+- The consumers of those keys are the *runtime's own* skill-registration
+  checks — `reforge/runtime/skills/builtin/__init__.py:68,73,83` read
+  `TAVILY_API_KEY` / `VISION_LLM_API_KEY` to decide which skills to register.
+  That happens inside the runtime process, not in the sandboxed child.
+- Skills are dispatched by the runtime over a JSON protocol; they are not a
+  library the generated program imports.
+
+So the exposure buys nothing. It is not a price paid for a capability — which
+is what makes this a limitation rather than a design trade-off.
+
+**If that ever stops being true — if generated code is given a task that calls
+an API directly — this entry must be re-evaluated before the fix is applied.**
+The whole argument below depends on the child needing no secrets.
+
+### Right fix (deferred): an allowlist, default-deny
+
+Pass only what execution requires — `PATH`, `PYTHONIOENCODING`, `SystemRoot`
+(Windows), `TMPDIR`/`TEMP`, `HOME`/`USERPROFILE`, `LANG`/`LC_*` — and drop
+everything else.
+
+### Why not a denylist or prefix filter
+
+Filtering `*_API_KEY` / `*_TOKEN` / `*_SECRET` is the tempting version and it
+is wrong: `OPENAI_ORG`, `AWS_PROFILE`, `GOOGLE_APPLICATION_CREDENTIALS` and
+`DATABASE_URL` are all sensitive and match none of those patterns. A denylist
+fails silently on every variable nobody thought of, and the set of names it
+must anticipate grows with every new integration. Default-deny inverts that:
+the failure mode becomes a missing variable that breaks loudly, not a leaked
+one that breaks nothing.
+
+### Why defer
+
+Same shape as L12 — short code, long verification:
+
+- **Cross-platform.** Dropping `SystemRoot` on Windows breaks parts of the
+  standard library and several C-extension packages outright. The allowlist has
+  to be validated per-platform, and the primary development platform here is
+  the one most likely to break.
+- **Unknown consumers.** Generated code may legitimately depend on variables
+  that are not credentials — `MPLBACKEND` for headless matplotlib, proxy
+  settings (`HTTP_PROXY`/`HTTPS_PROXY`), `PYTHONPATH`. Each needs a decision,
+  and the evidence for those decisions is real runs, not reasoning.
+
+### Trigger to revisit
+
+- The runtime is run with credentials that are not the developer's own
+  (shared deployment, CI with production keys, multi-tenant use), or
+- `DockerBackend` becomes the default, which would make this moot for the
+  default path and reduce the item to a subprocess-only caveat.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Adding a denylist because it is quicker. It leaves exactly the variables
+  nobody enumerated, which are the ones that leak.
+- ❌ Scrubbing credentials from stderr instead of from the environment. That
+  treats one sink of many and leaves the child holding the secrets.
+- ❌ Assuming `DockerBackend` makes this irrelevant. It does not pass host
+  environment through, but it is opt-in; the default path is this one.
 
 ---
