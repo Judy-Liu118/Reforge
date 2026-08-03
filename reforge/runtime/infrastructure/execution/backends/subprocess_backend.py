@@ -1,14 +1,24 @@
 """SubprocessBackend — direct subprocess execution (the original backend).
 
-Trade-off: zero deps, fast startup (~30ms), but no filesystem / network /
-resource isolation. Suitable for trusted LLM-generated code in dev/CI.
-For untrusted code or production demos, prefer DockerBackend.
+Trade-off: zero deps and a far cheaper start than bringing up a container, but
+no isolation to speak of. The child runs under the same interpreter as the
+runtime, with the caller's workspace as cwd, inheriting the runtime's entire
+environment — every API key in it included. A script here can read and write
+the user's project tree and anything else that user account can reach. Use it
+for code we are willing to run on the host as-is; for anything else use
+DockerBackend, which is where the execution-time boundary actually lives.
 
-The generated script lives in a temp file so it never pollutes the user's
+The generated script goes to a temp file so it never pollutes the user's
 project tree; the subprocess `cwd` is the workspace the caller passed in
-(typically the user's current working directory) so the script can read
-files like ``pd.read_csv("sales.csv")``. Code safety is the responsibility
-of the 3-layer governance guard upstream, not this backend.
+(typically the user's current working directory) so the script can read files
+like ``pd.read_csv("sales.csv")``.
+
+The governance layers upstream do not make up for this, and it is a mistake to
+read them as doing so. The pre-execution semantic gate screens the *request
+text* for dangerous phrasing; the AST review runs *after* the code has already
+run and yields an evaluation signal, not protection. Neither can stop a live
+process from touching the filesystem. That containment comes from the backend
+or it does not exist.
 """
 
 from __future__ import annotations
@@ -52,13 +62,19 @@ class SubprocessBackend:
         # subprocess reader thread crashes on Windows (default GBK) the first
         # time the script prints any non-ASCII character — common with vision
         # API output, CSV data, or `·` separators.
+        # Note the other half of this line: the child inherits the runtime's
+        # whole environment, credentials included. Nothing filters it — the
+        # generated code does not have to be hostile to leak a key, a stray
+        # print(os.environ) while debugging is enough.
         child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         start = time.perf_counter()
         try:
-            # sys.executable, not PATH's "python": the sandbox must run in
-            # the same interpreter/venv as the runtime, or the generated
-            # code sees a different dependency set than capability_check
-            # assumed.
+            # sys.executable, not PATH's "python": generated code is written
+            # against the dependency set the runtime itself has — the codegen
+            # prompt offers pandas, matplotlib and friends — so it has to run
+            # in that same interpreter/venv or those imports fail. (Not, as
+            # this comment once claimed, because capability_check assumed a
+            # dependency set: that node only regex-screens the request text.)
             proc = subprocess.run(
                 [sys.executable, str(script_path)],
                 capture_output=True,
