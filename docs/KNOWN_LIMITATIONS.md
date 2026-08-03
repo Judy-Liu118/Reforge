@@ -1154,3 +1154,152 @@ qualifier/tie-breaker split: admit on a structural-signal match, demote
   weight tuning and admission that 方案甲 removed on the repair_hint path.
 
 ---
+
+## L11. Docker isolation stops at capability drops — `--user` and mount separation are one coordinated change, not two flags
+
+### Symptom
+
+`DockerBackend`
+(`reforge/runtime/infrastructure/execution/backends/docker_backend.py`) caps
+network, memory, cpu and pids, drops all Linux capabilities and blocks setuid
+escalation. Two gaps remain, and neither closes on its own:
+
+| Gap | Current state | What it exposes |
+|---|---|---|
+| Process identity | container runs as **root** (no `--user`) | anything writable inside the container is writable by uid 0 |
+| Workspace mount | `-v <workspace>:/work` — **read-write, whole tree** | generated code can modify or delete any file in the caller's project |
+
+The second is the larger one: the backend isolates the host *around* the
+workspace while handing over the workspace itself — the part with value in it.
+
+### Why they cannot land separately
+
+- **`--user` alone breaks writes.** The mount is owned on the host by the
+  invoking user; a container process running as uid 1000 has no write
+  permission on it. On Linux every script that writes an output file fails
+  with EACCES. On Docker Desktop (Windows/macOS) the file-sharing layer
+  usually masks this — the flag looks harmless on the development machine and
+  fails on Linux CI or a Linux deployment.
+- **Mount separation alone leaves root.** Splitting into `/input:ro` plus a
+  writable output dir removes the destruction risk but not the privilege one.
+- **`--user` needs what the split provides.** For a non-root uid to write
+  anything it needs a directory *we* create with ownership we control — which
+  is exactly the output dir the split introduces.
+
+### The split is a codegen-contract change, not a flag change
+
+The current contract is "read and write both happen in `/work`". Splitting it
+changes what a relative path means: `pd.read_csv("sales.csv")` resolves
+differently depending on where `-w` points. Generated code knows nothing of the
+new layout, so `reforge/models/prompts/templates.py` has to change with it.
+Cost is dominated by that, not by the docker arguments.
+
+### Right fix (deferred)
+
+Add an opt-in strict mode rather than changing the default:
+
+```python
+DockerBackend(isolation="strict")   # --user + /input:ro + writable output dir
+DockerBackend()                     # unchanged behaviour — current default
+```
+
+Keeping the default untouched matters because the failure mode is
+platform-dependent: flipping it would break Linux users while passing every
+test run on a Windows or macOS development machine.
+
+### Why defer
+
+- Cross-layer: docker arguments + prompt templates + path conventions inside
+  generated code.
+- The breakage it risks is invisible on the primary development platform
+  (Windows), so it needs a Linux verification pass before it can be trusted.
+- No current use case runs adversarial code; the backend's own docstring
+  scopes it to code we are willing to run.
+
+### Trigger to revisit
+
+- The runtime is pointed at code from an untrusted source (a shared demo, a
+  multi-tenant deployment, user-submitted tasks), or
+- a real incident in which generated code damages files in the caller's
+  workspace.
+
+### `--read-only` is separately a non-goal
+
+Not part of this item. The argument is recorded where it applies — the
+`DockerBackend` class docstring — and is not repeated here.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Adding `--user` on its own because it is "just one flag". It is the half
+  of the change that breaks writes, and it breaks them on a platform other
+  than the one it will be tested on.
+- ❌ Verifying strict mode only on Docker Desktop. The file-sharing layer
+  hides exactly the permission failure the mode has to get right.
+- ❌ Flipping the default to strict once it works. The failure mode is
+  environment-dependent; opt-in is what keeps a working default working.
+
+---
+
+## L12. `extract_error_type` can be poisoned by a file path containing "Error"
+
+### Symptom
+
+`reforge/runtime/infrastructure/error_extraction.py` scans a traceback line by
+line for the substrings `Error` / `Warning` / `Exception`, returning the first
+hit expanded backwards over letters and dots. Stack-frame lines are scanned
+like any other. A traceback produced from a path containing one of those words
+— `/home/me/ErrorDemo/run.py`, `C:\work\ErrorLogs\` — yields
+`error_type="Error"` off the frame, before the real exception line is reached.
+That value flows into `execution_node`
+(`reforge/runtime/orchestration/graph/nodes/execution.py:15`) and from there
+into failure-mode classification and the fingerprint's fallback path.
+
+### Current exposure
+
+- **Docker backend: immune, incidentally.** The program is piped over stdin,
+  so the user frame reads `File "<stdin>"` and carries no host path. This is a
+  *side effect* of the stdin change (A5/B5), not a fix of this defect.
+- **Subprocess backend: still exposed.** Its tracebacks carry the real
+  tempfile path, and the workspace path appears in frames from user code.
+
+### Two ways to fix it, both with limits
+
+| Approach | Change | Limit |
+|---|---|---|
+| Skip frame lines | `if line.startswith('File "'): continue` — ~2 lines | Blocks only the standard frame shape. A path inside a *message* (`PermissionError: ... '/x/ErrorLogs/a.csv'`) still poisons it |
+| Anchor the match | reuse `fingerprint._last_error_line`'s regex `^[A-Za-z][A-Za-z0-9_.]*(?:Error｜Exception｜Warning)\s*:` — ~5–10 lines | Correct for real tracebacks, but rejects the non-traceback text the loose scan currently accepts |
+
+### The cost is semantic evaluation, not code
+
+`extract_error_type` is called on `stderr`, which is not always a Python
+traceback: shell-level errors, library messages printed directly, tool output.
+The loose scan extracts something from those; an anchored match returns the
+`default` (`"UnknownError"` at the execution-node call site). That shifts
+failure-mode classification and therefore retry policy.
+
+Sized honestly: under 10 lines of code, 2–3 tests, plus a recall-regression
+pass over real stderr samples to count how many currently-typed failures would
+become `UnknownError`. The evaluation *is* the work.
+
+### Structural observation
+
+`fingerprint._last_error_line` and `extract_error_type` do the same job with
+opposite strictness — one anchored, one substring-scanning. Merging them is the
+more thorough fix and is **not** recommended as an incidental change: it would
+change what `error_type` means for every consumer, a blast radius larger than
+the defect it closes.
+
+### Trigger to revisit
+
+- A wrong `error_type` is traced to a path, or
+- the recall-regression sample is collected for another reason, making the
+  evaluation nearly free.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Swapping in the anchored regex without the recall pass. It trades a rare
+  poisoning for a systematic loss of typing on non-traceback stderr.
+- ❌ Treating the stdin change as having fixed this. It removed one source of
+  poisoned paths on one backend; the defect itself is untouched.
+
+---
