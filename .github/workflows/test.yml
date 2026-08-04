@@ -64,17 +64,45 @@ jobs:
       # retrievable through the REST API either (no endpoint returns it), so it
       # serves a human opening the run page and nothing else. Do not let a number
       # being visible here be mistaken for that number being checked.
+      #
+      # The closing grep is the one guarantee this step can offer. The chain is:
+      #   (1) pytest emits a summary line  (2) tee writes it  (3) we extract it
+      #   ------------------------------------------------------------ bedrock
+      #   (4) append to $GITHUB_STEP_SUMMARY  (5) the platform reads it
+      #   (6) it renders  (7) a human sees it
+      # Nothing inside a job can observe past (4): the runner sees its own
+      # filesystem and no further, and no REST endpoint returns the rendered
+      # summary. So (1)-(3) is the whole of what a failing assertion can defend,
+      # and that is where the grep sits.
+      #
+      # That is also the right half to spend it on, because the two halves differ
+      # in churn: (1)-(3) depend on the pytest version, our flags and our
+      # extraction, and break whenever any of those move; (5)-(6) are platform
+      # behaviour and stay put once confirmed. When a guarantee cannot span the
+      # whole chain, put it on the volatile half and confirm the stable half by
+      # hand, once.
+      #
+      # Deliberately NOT asserting that $GITHUB_STEP_SUMMARY ends up non-empty:
+      # the echoes below write content whether or not grep and tail found
+      # anything, so that check would pass unconditionally. It would read as
+      # verification while verifying nothing — please do not "fix" its absence.
+      #
+      # Cost to expect: if pytest dies during startup there is no summary line to
+      # extract, and this step goes red next to the pytest step. Two red steps,
+      # one fault — that is the design, not a fault in this step.
       - name: Publish test counts to the run summary
         if: always()
         run: |
+          last=$(tail -n 1 pytest-out.txt)
           {
             echo "### pytest — Python ${{ matrix.python-version }}"
             echo ""
             echo '```'
             grep -E "^(SKIPPED|ERROR)" pytest-out.txt || echo "(no skips reported)"
-            tail -n 1 pytest-out.txt
+            echo "$last"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          grep -qE '[0-9]+ (passed|failed|error)' <<< "$last"
 
       # Run the docker-marked tests again on their own. The quiet main run
       # cannot tell "3 passed" from "3 skipped" at a glance, and a fully
