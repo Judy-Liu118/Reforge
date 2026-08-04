@@ -1,5 +1,7 @@
 # Reforge Architecture
 
+English | [简体中文](ARCHITECTURE.zh-CN.md)
+
 Detailed reference for each runtime subsystem. For the elevator pitch and
 quick start, see `../README.md`. For phase history, see `EVOLUTION.md`.
 
@@ -176,8 +178,8 @@ flowchart LR
 
 | Backend | Startup overhead | FS isolation | Network isolation | CPU / mem cap | When to use |
 |---|---|---|---|---|---|
-| `SubprocessBackend` (default) | ~30 ms | workspace cwd only | none | none | dev, CI, benchmarks, trusted LLM code |
-| `DockerBackend` (opt-in) | ~1–3 s | full (`-v workspace:/work`) | `--network=none` | `--memory=512m --cpus=1 --pids-limit=128` | demos, untrusted code, production |
+| `SubprocessBackend` (default) | process spawn only | **none** — cwd is the workspace, the rest of the host FS is reachable, and the runtime's full environment (API keys included) is inherited | none | none | dev, CI, benchmarks, code we are willing to run on the host |
+| `DockerBackend` (opt-in) | ~1–3 s | host FS hidden, but `/work` is mounted **read-write** and the container runs as **root** — see KNOWN_LIMITATIONS L11 | `--network=none` | `--memory=512m --cpus=1 --pids-limit=128 --cap-drop=ALL --security-opt=no-new-privileges` | demos, untrusted code, production |
 
 The Protocol is intentionally narrow — `execute(code, *, workspace, timeout_s) -> ExecutionOutput`
 — so a third backend (firecracker, gVisor, remote sandbox API) drops in with

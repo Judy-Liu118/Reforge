@@ -1,5 +1,7 @@
 # Reforge Memory Subsystem
 
+English | [简体中文](README.zh-CN.md)
+
 Reforge keeps four distinct kinds of persisted experience. They look similar
 on disk (JSON / JSONL append logs) but serve different roles in the runtime.
 Mixing them up is the most common source of confusion when extending the

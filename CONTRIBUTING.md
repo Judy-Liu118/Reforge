@@ -1,5 +1,7 @@
 # Contributing to Reforge
 
+English | [简体中文](CONTRIBUTING.zh-CN.md)
+
 Quick orientation for anyone reading the code or sending a patch.
 
 ## Setup

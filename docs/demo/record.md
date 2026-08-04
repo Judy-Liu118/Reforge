@@ -1,5 +1,7 @@
 # How to record the README demo
 
+English | [简体中文](record.zh-CN.md)
+
 Reforge demos best as a self-healing chain: failure -> reflection -> recovery.
 Below is the exact scripted scenario and the one-line command to record it.
 

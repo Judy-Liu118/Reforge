@@ -1,5 +1,7 @@
 # Reforge — Architecture & Evolution Archive
 
+English | [简体中文](EVOLUTION.zh-CN.md)
+
 > This file consolidates `ARCHITECTURE.md`, `TASKS.md`, `RUNTIME_ARCHITECTURE_REVIEW.md`,
 > `docs/ARCHITECTURE_VISION.md`, `docs/RESEARCH_RUNTIME_ROADMAP.md`,
 > and `docs/RUNTIME_REVIEW.md` into a single historical archive. The live,
