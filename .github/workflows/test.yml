@@ -51,7 +51,30 @@ jobs:
           LLM_API_KEY: "dummy-for-unit-tests"
           OPENAI_API_KEY: "dummy-for-unit-tests"
         run: |
-          pytest reforge/tests -rs
+          # pipefail matters here: without it `tee` returns 0 and a failing
+          # pytest would pass the step silently.
+          set -o pipefail
+          pytest reforge/tests -rs | tee pytest-out.txt
+
+      # Lift the counts and the skip list onto the run page. Be clear about what
+      # this buys and what it does not: the docker step below is confirmable
+      # WITHOUT reading any log, because a deviation makes it FAIL — the sentinel
+      # turns a missing daemon into a red step. That is a guarantee. This summary
+      # is only readability. It exists because job-summary markdown is not
+      # retrievable through the REST API either (no endpoint returns it), so it
+      # serves a human opening the run page and nothing else. Do not let a number
+      # being visible here be mistaken for that number being checked.
+      - name: Publish test counts to the run summary
+        if: always()
+        run: |
+          {
+            echo "### pytest — Python ${{ matrix.python-version }}"
+            echo ""
+            echo '```'
+            grep -E "^(SKIPPED|ERROR)" pytest-out.txt || echo "(no skips reported)"
+            tail -n 1 pytest-out.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Run the docker-marked tests again on their own. The quiet main run
       # cannot tell "3 passed" from "3 skipped" at a glance, and a fully
