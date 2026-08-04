@@ -76,6 +76,23 @@ markers = [
 ]
 
 [tool.ruff]
+# line-length is NOT enforced by the lint gate. E501 belongs to the E5 group and
+# lint.select below picks only E4/E7/E9/F, so no run of `ruff check` ever reports
+# a long line — and CI runs `ruff check`, never `ruff format`. This value
+# therefore only takes effect if someone runs the formatter by hand locally.
+# Worth stating because the mismatch already misled once: a reviewer checked line
+# lengths by hand "in place of ruff" and so verified the one thing ruff does not
+# look at, while never checking the E4/E7/F rules it does.
+#
+# Turning it on is a two-step job, not an incidental edit — clean first, then
+# enable, in separate commits. As of 2026-08-04 the tree carries 166 E501
+# violations across 60+ files, many of them long strings, URLs and table rows
+# where mechanical wrapping costs more readability than it buys.
+#
+# Trigger to reconsider: newly written code starts running past 100 columns. It
+# does not today — the four files rewritten in the sandbox-hardening batch had 0
+# violations against those 166, so the habit holds without a rule enforcing it.
+# When that stops being true, the rule starts earning its cleanup cost.
 line-length = 100
 target-version = "py311"
 
