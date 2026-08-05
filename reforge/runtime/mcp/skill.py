@@ -11,8 +11,8 @@ from __future__ import annotations
 import time
 
 from reforge.runtime.skills.context import SkillContext
-from reforge.runtime.skills.mcp.client import MCPProtocolError
-from reforge.runtime.skills.mcp.session import MCPSession, MCPToolInfo
+from reforge.runtime.mcp.client import MCPProtocolError
+from reforge.runtime.mcp.session import MCPSession, MCPToolInfo
 from reforge.runtime.skills.result import SkillResult
 
 

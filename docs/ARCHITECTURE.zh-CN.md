@@ -203,8 +203,8 @@ flowchart LR
     end
 ```
 
-传输层（`skills/mcp/client.py`）是手写的同步 JSON-RPC 2.0 客户端，跑在 stdio 上。不依赖
-`mcp` SDK，也不会把 asyncio 传染进运行时。生命周期管理（`skills/mcp/session.py`）负责
+传输层（`runtime/mcp/client.py`）是手写的同步 JSON-RPC 2.0 客户端，跑在 stdio 上。不依赖
+`mcp` SDK，也不会把 asyncio 传染进运行时。生命周期管理（`runtime/mcp/session.py`）负责
 initialize 握手、`tools/list` 缓存、`tools/call` 派发，以及带强杀兜底的优雅关闭。
 
 `MCPSkill` 把单个 MCP 工具适配成 `Skill` Protocol；注册名形如 `mcp.<server>.<tool>`，

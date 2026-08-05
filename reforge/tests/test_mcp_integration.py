@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from reforge.runtime.skills import Skill, SkillContext, SkillRegistry, SkillResult
-from reforge.runtime.skills.mcp import (
+from reforge.runtime.mcp import (
     MCPClient,
     MCPProtocolError,
     MCPSession,

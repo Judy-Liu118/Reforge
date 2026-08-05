@@ -1108,7 +1108,7 @@ runtime 手上的每一个变量 —— `DASHSCOPE_API_KEY`、`VISION_LLM_API_KE
 
 ### 症状
 
-`discover_and_register()`（`reforge/runtime/skills/mcp/discovery.py`）在整个仓库里
+`discover_and_register()`（`reforge/runtime/mcp/discovery.py`）在整个仓库里
 只有一处调用：`reforge/tests/test_mcp_integration.py`。它对话过的唯一 server 是
 `reforge/tests/_mcp_test_server.py` —— 一个约 150 行、仅用标准库的 fixture。
 `reforge/cli/`、`reforge/benchmark/`、`scripts/`、`default_skill_registry()` 都没有

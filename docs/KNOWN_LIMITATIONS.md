@@ -1424,7 +1424,7 @@ Same shape as L12 — short code, long verification:
 
 ### Symptom
 
-`discover_and_register()` (`reforge/runtime/skills/mcp/discovery.py`) is called
+`discover_and_register()` (`reforge/runtime/mcp/discovery.py`) is called
 from exactly one place in the repository: `reforge/tests/test_mcp_integration.py`.
 The only server it has ever spoken to is `reforge/tests/_mcp_test_server.py`, a
 ~150-line stdlib fixture. Nothing in `reforge/cli/`, `reforge/benchmark/`,

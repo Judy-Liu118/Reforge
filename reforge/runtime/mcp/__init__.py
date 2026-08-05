@@ -10,19 +10,19 @@ substrate that govern native skills also govern MCP tool calls — bringing
 runtime governance to the MCP ecosystem.
 
 Quick start:
-    from reforge.runtime.skills.mcp import discover_and_register
+    from reforge.runtime.mcp import discover_and_register
     n = discover_and_register(registry, ["python", "-m", "my_mcp_server"])
     # n tools from the server are now available alongside built-in skills
 """
 
-from reforge.runtime.skills.mcp.client import (
+from reforge.runtime.mcp.client import (
     MCPClient,
     MCPProtocolError,
     MCPTimeoutError,
 )
-from reforge.runtime.skills.mcp.discovery import discover_and_register
-from reforge.runtime.skills.mcp.session import MCPSession, MCPToolInfo
-from reforge.runtime.skills.mcp.skill import MCPSkill
+from reforge.runtime.mcp.discovery import discover_and_register
+from reforge.runtime.mcp.session import MCPSession, MCPToolInfo
+from reforge.runtime.mcp.skill import MCPSkill
 
 __all__ = [
     "MCPClient",

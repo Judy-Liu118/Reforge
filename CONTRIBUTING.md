@@ -52,7 +52,7 @@ These are enforced by review, not always by tests.
 | You want to... | Put it in... |
 |---|---|
 | Add a new built-in skill | `reforge/runtime/skills/builtin/<name>.py` + register in `default_skill_registry()` |
-| Add a new MCP server | `reforge/runtime/skills/mcp/discovery.py` configures auto-registration |
+| Add a new MCP server | call `discover_and_register(registry, command)` from `reforge/runtime/mcp/discovery.py` — the launch command is passed in by the caller; there is no config-file wiring and no auto-registration hook yet (see KNOWN_LIMITATIONS L14) |
 | Add a new event kind | `reforge/runtime/events/models.py` factory + `EventKind` literal + projection update |
 | Add an agent role | `reforge/runtime/agents/<role>.py` with `AgentCapability` carried explicitly |
 | Add a sandbox backend | `reforge/runtime/infrastructure/execution/backends/<name>_backend.py` conforming to `SandboxBackend` Protocol |

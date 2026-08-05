@@ -211,9 +211,9 @@ flowchart LR
     end
 ```
 
-The transport (`skills/mcp/client.py`) is a hand-rolled synchronous
+The transport (`runtime/mcp/client.py`) is a hand-rolled synchronous
 JSON-RPC 2.0 client over stdio. No `mcp` SDK dependency, no asyncio
-infection of the runtime. The lifecycle (`skills/mcp/session.py`) handles
+infection of the runtime. The lifecycle (`runtime/mcp/session.py`) handles
 the initialize handshake, `tools/list` caching, `tools/call` dispatch, and
 graceful shutdown with force-kill fallback.
 

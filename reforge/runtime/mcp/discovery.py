@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from reforge.runtime.skills.mcp.session import MCPSession
-from reforge.runtime.skills.mcp.skill import MCPSkill
+from reforge.runtime.mcp.session import MCPSession
+from reforge.runtime.mcp.skill import MCPSkill
 from reforge.runtime.skills.registry import SkillRegistry
 
 

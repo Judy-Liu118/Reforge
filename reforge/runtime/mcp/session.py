@@ -20,7 +20,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-from reforge.runtime.skills.mcp.client import MCPClient, MCPProtocolError
+from reforge.runtime.mcp.client import MCPClient, MCPProtocolError
 
 _PROTOCOL_VERSION = "2024-11-05"
 _CLIENT_INFO = {"name": "reforge", "version": "0.1.0"}

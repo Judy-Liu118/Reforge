@@ -51,7 +51,7 @@ python -m pytest reforge/tests --tb=short
 | 你想…… | 就放到…… |
 |---|---|
 | 新增一个内置 skill | `reforge/runtime/skills/builtin/<name>.py`，并在 `default_skill_registry()` 里注册 |
-| 新增一个 MCP server | 在 `reforge/runtime/skills/mcp/discovery.py` 里配置自动注册 |
+| 新增一个 MCP server | 调用 `reforge/runtime/mcp/discovery.py` 里的 `discover_and_register(registry, command)` —— 启动命令由调用方传入；目前既没有配置文件接线，也没有自动注册钩子（见 KNOWN_LIMITATIONS L14） |
 | 新增一种事件类型 | `reforge/runtime/events/models.py` 加工厂函数 + `EventKind` 字面量 + 更新投影 |
 | 新增一个 agent 角色 | `reforge/runtime/agents/<role>.py`，并显式携带 `AgentCapability` |
 | 新增一个沙箱后端 | `reforge/runtime/infrastructure/execution/backends/<name>_backend.py`，实现 `SandboxBackend` Protocol |
