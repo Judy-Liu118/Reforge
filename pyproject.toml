@@ -55,9 +55,14 @@ test = [
     # `importlib.util.find_spec`, so no `playwright install <browser>` step.
     "playwright>=1.40",
 ]
+# dev REFERENCES test (PEP 508 self-referencing extra) rather than repeating it,
+# so "what it takes to run the tests" has exactly one definition. The previous
+# form listed pytest twice by hand, and that duplication is precisely what let
+# `test` gain Pillow/playwright while `dev` silently did not — installing
+# `.[dev]` would then skip the very tests `.[test]` runs. A copy is a drift
+# source; only add things here that dev needs and test genuinely does not.
 dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=1.4.0",
+    "reforge[test]",
     "ruff>=0.4",
 ]
 
