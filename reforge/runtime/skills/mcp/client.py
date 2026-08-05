@@ -10,13 +10,22 @@ Why hand-rolled instead of the official `mcp` SDK:
   - MCP wire protocol is small (JSON-RPC 2.0 + 4 core methods); writing it
     shows understanding rather than dependency
   - One less third-party dependency to vet
+
+Reads run on a dedicated daemon thread rather than inline. A blocking
+`readline()` cannot be given a deadline on Windows (`select` does not accept
+pipes there), so the thread parks on the pipe and hands frames to callers
+through a queue, which *can* be waited on with a timeout. The thread also keeps
+stdout drained while no request is outstanding, so a server pushing
+notifications never blocks on a full pipe.
 """
 
 from __future__ import annotations
 
 import json
+import queue
 import subprocess
 import threading
+import time
 from typing import Any
 
 
@@ -24,11 +33,30 @@ class MCPProtocolError(RuntimeError):
     """Raised when the server returns an error or violates the protocol."""
 
 
+class MCPTimeoutError(MCPProtocolError):
+    """Raised when the server does not answer a request within its deadline.
+
+    Deliberately a subclass of MCPProtocolError: existing handlers (notably
+    MCPSkill.invoke) already catch that type, so a timeout degrades into a
+    failed SkillResult without every call site learning a new exception.
+    """
+
+
+class _Eof:
+    """Sentinel queued by the reader thread once stdout reaches EOF."""
+
+    __slots__ = ()
+
+
+_EOF = _Eof()
+
+
 class MCPClient:
     """JSON-RPC 2.0 transport over a subprocess's stdin/stdout pipes.
 
     Thread-safe: a single lock serialises request/response cycles so concurrent
-    callers don't interleave bytes on the same pipe.
+    callers don't interleave bytes on the same pipe, and so a frame queued for
+    one caller is never consumed by another.
     """
 
     def __init__(self, proc: subprocess.Popen) -> None:
@@ -37,6 +65,11 @@ class MCPClient:
         self._proc = proc
         self._lock = threading.Lock()
         self._next_id = 1
+        self._frames: queue.Queue[Any] = queue.Queue()
+        self._reader = threading.Thread(
+            target=self._read_loop, name="mcp-stdout-reader", daemon=True
+        )
+        self._reader.start()
 
     # ------------------------------------------------------------------
     # Request / response
@@ -45,7 +78,8 @@ class MCPClient:
     def request(self, method: str, params: dict | None = None, *, timeout_s: float = 30.0) -> Any:
         """Send a JSON-RPC request and block until the matching response arrives.
 
-        Raises MCPProtocolError on RPC error response or protocol violation.
+        Raises MCPTimeoutError if `timeout_s` elapses first, MCPProtocolError on
+        an RPC error response or protocol violation.
         """
         with self._lock:
             req_id = self._next_id
@@ -90,34 +124,60 @@ class MCPClient:
         except (BrokenPipeError, OSError) as exc:
             raise MCPProtocolError(f"failed to write to server stdin: {exc}") from exc
 
-    def _read_until_id(self, expected_id: int, *, timeout_s: float) -> dict:
-        """Read JSON-RPC frames until one matches *expected_id*.
+    def _read_loop(self) -> None:
+        """Drain stdout for the process lifetime, queueing well-formed frames.
 
-        Server-side notifications (no id field) are discarded silently — they're
-        progress/log messages that callers don't need at this layer.
+        Malformed lines are dropped here rather than at the call site — some
+        servers emit plain-text logs to stdout, and those must not be mistaken
+        for a response nor left to fill the pipe.
         """
-        assert self._proc.stdout is not None
-        # Block-line reads in subprocess.Popen are already line-buffered when
-        # text=True is set on the Popen instance. We rely on the caller to set
-        # text=True (the MCPSession constructor does).
+        stdout = self._proc.stdout
+        assert stdout is not None
+        try:
+            for line in stdout:
+                try:
+                    frame = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(frame, dict):
+                    self._frames.put(frame)
+        except (ValueError, OSError):
+            # Stream closed underneath us during shutdown; EOF is signalled below.
+            pass
+        finally:
+            self._frames.put(_EOF)
+
+    def _read_until_id(self, expected_id: int, *, timeout_s: float) -> dict:
+        """Pull frames from the reader thread until one matches *expected_id*.
+
+        Discarded without comment: server-side notifications (no id field, so
+        they can never match) and late responses to an earlier request that
+        already timed out. The latter is why a timeout does not poison the
+        session — a stale frame is simply skipped by the next caller.
+        """
+        deadline = time.monotonic() + timeout_s
         while True:
-            line = self._proc.stdout.readline()
-            if not line:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise MCPTimeoutError(
+                    f"server did not respond to id={expected_id} within {timeout_s}s"
+                )
+            try:
+                frame = self._frames.get(timeout=remaining)
+            except queue.Empty:
+                raise MCPTimeoutError(
+                    f"server did not respond to id={expected_id} within {timeout_s}s"
+                ) from None
+            if frame is _EOF:
+                # Sticky: every later caller must see EOF too, not a timeout.
+                self._frames.put(_EOF)
                 returncode = self._proc.poll()
                 raise MCPProtocolError(
                     f"server closed stdout before responding to id={expected_id} "
                     f"(returncode={returncode})"
                 )
-            try:
-                frame = json.loads(line)
-            except json.JSONDecodeError:
-                # Skip malformed lines — some servers emit logs to stdout
-                continue
-            if not isinstance(frame, dict):
-                continue
             if frame.get("id") == expected_id:
                 return frame
-            # otherwise: notification or response for an earlier (cancelled) request
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -130,3 +190,11 @@ class MCPClient:
                 self._proc.stdin.close()
             except OSError:
                 pass
+
+    def join_reader(self, timeout: float = 1.0) -> None:
+        """Wait for the reader thread to observe EOF and finish.
+
+        Best-effort: the thread is a daemon, so a server that never closes
+        stdout cannot hold up interpreter exit.
+        """
+        self._reader.join(timeout=timeout)

@@ -1103,3 +1103,75 @@ runtime 手上的每一个变量 —— `DASHSCOPE_API_KEY`、`VISION_LLM_API_KE
   默认走的是这一条。
 
 ---
+
+## L14. MCP 客户端只对着仓库内的 fixture server 验证过 —— 若干协议缺口在接入真实 server 之前无法证伪
+
+### 症状
+
+`discover_and_register()`（`reforge/runtime/skills/mcp/discovery.py`）在整个仓库里
+只有一处调用：`reforge/tests/test_mcp_integration.py`。它对话过的唯一 server 是
+`reforge/tests/_mcp_test_server.py` —— 一个约 150 行、仅用标准库的 fixture。
+`reforge/cli/`、`reforge/benchmark/`、`scripts/`、`default_skill_registry()` 都没有
+绑定任何 MCP server，也没有任何配置文件带 `mcpServers` 键。
+
+这本身不是缺陷 —— 传输层确实经过了真子进程、真管道的端到端验证。缺陷在于这个
+狭窄的接触面**掩盖了什么**：一个天生守规矩的 fixture，无法证伪客户端在面对
+不守规矩的 server 时的行为。
+
+### 待办债务 —— 真实缺口，只是当前触发不到
+
+以下是缺陷，不是取舍。它们之所以潜伏，仅仅因为 fixture server 从不触发它们。
+
+| 缺口 | 位置 | 触发条件 |
+|---|---|---|
+| `env=` 直接交给 `Popen` 而未合并 `os.environ` —— Popen 的语义是**替换**环境而非扩展 | `session.py` `connect()` | 任何需要 `PATH` 的 server。测试套件已经在手工绕过（`test_mcp_integration.py` 自己拼 `{**os.environ, ...}`）—— 测试里出现绕过写法本身就是信号 |
+| `kill()` 之后没有 `wait()`，POSIX 上留下僵尸窗口 | `session.py` `shutdown()` | 一个既忽略 stdin-EOF 又忽略 `terminate()` 的 server |
+| 无进程组 / job object，孙进程在 `terminate()` 后存活 | `session.py` `connect()` | 由 `npx`、`uvx` 或 shell 启动的 server，即绝大多数已发布的 server |
+| JSON-RPC `error.code` / `error.data` 被拍平进 f-string，调用方无法按 code 分支 | `client.py` `request()` | 任何需要区分「方法不存在」与「参数非法」的调用方 |
+| stdout 上被判为脏行而跳过的内容，既不计数也不记日志 | `client.py` `_read_loop()` | 调试一个把日志和帧混在一起输出的 server —— 目前完全是黑盒 |
+
+### 受接入范围限制的缺口 —— 不是「我们不需要」
+
+以下功能未实现，而诚实的表述**不是**「它们没必要」，而是：**在当前的接入范围内 ——
+只有一个我们自己控制的 fixture server —— 没有任何办法证伪关于它们的判断。**
+一旦绑定第三方 server，它们立刻成为真实需求，届时应当重新打开评估，而不是继续辩护。
+
+| 未实现项 | 何时成为真实需求 |
+|---|---|
+| `tools/list` 分页（`nextCursor` 被忽略，只读到第一页） | server 广告的工具数超过一页时 —— 表现为静默丢工具，不报错 |
+| notification 分发（`notifications/*` 读到即丢，无 handler 注册表） | server 发出 `tools/list_changed` 时；目前 `list_tools` 缓存永不失效 |
+| capabilities 协商（客户端发 `capabilities: {}`，server 返回的 `capabilities` 被丢弃） | server 按声明的 capability 门控方法，或 runtime 需要 `roots`/`sampling` 时 |
+| `protocolVersion` 校验（硬编码 `"2024-11-05"`，不检查 server 回包） | server 只讲更新的修订版时 —— 目前版本不匹配是静默的 |
+| server 主动发起的请求（`id` 无法识别的帧被丢弃且永不应答） | server 发出 `sampling/createMessage` 或 `roots/list` 并阻塞等待回复时 |
+
+### 为什么这个区分重要
+
+这个区分正是本条目的意义所在。「我们不需要分页」是一个关于 MCP server 全体的
+断言，而且它是错的。「我们还无法判断是否需要分页，因为我们只对话过一个有五个
+工具的 server」是一个关于**本仓库现有证据**的断言，它是对的。后一种表述还自带
+失效条件，前一种没有。
+
+### 不在此列：超时
+
+`timeout_s` 曾被 `MCPClient.request()` 接收却从未使用 —— 读循环会无限阻塞。
+那一条不属于受范围限制的问题（它对 fixture server 和对任何 server 一样会触发），
+现已修复：读取移到专用线程上，并真正遵守 deadline。此处记录它只为标出边界 ——
+**一个承诺了自己不做的事的参数是缺陷，不是被推迟的决定**，不该出现在上面的清单里。
+
+### 触发重审的条件
+
+绑定了真实的 MCP server（`discover_and_register` 的 command 参数指向
+`_mcp_test_server` 以外的任何东西）。那一刻起，上面「待办债务」各行不再潜伏，
+而「受范围限制」各行必须逐条对照该 server 的实际行为重新评估。
+
+### 反模式 —— 禁止采用
+
+- ❌ 在绑定真实 server 之前就投机性地实现那些受范围限制的条目。每一条都需要一个
+  具体的 server 来验证；现在就写，产出的是由想象需求支撑的、未经测试的代码。
+- ❌ 拿「我们只用一个 server」当作这些缺口**无所谓的理由**。它是这些缺口无法被
+  证伪的原因，而这恰恰是问题所在，不是免责。
+- ❌ 在没有先解决凭据传递问题之前，就往 `MCPSession.connect()` 里合并 `os.environ`
+  —— 见 L13。subprocess backend 的环境泄漏是同一个形状的问题，而 MCP server
+  同样是被 spawn 出来的进程。
+
+---

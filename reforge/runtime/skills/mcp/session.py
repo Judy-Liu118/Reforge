@@ -14,7 +14,9 @@ and registers in one shot.
 
 from __future__ import annotations
 
+import collections
 import subprocess
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +25,8 @@ from reforge.runtime.skills.mcp.client import MCPClient, MCPProtocolError
 _PROTOCOL_VERSION = "2024-11-05"
 _CLIENT_INFO = {"name": "reforge", "version": "0.1.0"}
 _DEFAULT_SHUTDOWN_TIMEOUT = 5.0
+_DEFAULT_REQUEST_TIMEOUT = 30.0
+_STDERR_TAIL_LINES = 20
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,35 @@ class MCPSession:
         self._client = client
         self._tools_cache: list[MCPToolInfo] | None = None
         self._server_info: dict[str, Any] | None = None
+        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=_STDERR_TAIL_LINES)
+        self._stderr_thread: threading.Thread | None = None
+        if proc.stderr is not None:
+            self._stderr_thread = threading.Thread(
+                target=self._drain_stderr, name="mcp-stderr-drain", daemon=True
+            )
+            self._stderr_thread.start()
+
+    def _drain_stderr(self) -> None:
+        """Keep stderr empty for the process lifetime, retaining only the tail.
+
+        Without this the pipe fills and the server blocks *writing a log line* —
+        which surfaces as a request timeout and reads like a slow server. The
+        retained tail is attached to handshake failures, where a crashed
+        server's diagnostics are otherwise invisible.
+        """
+        stderr = self._proc.stderr
+        assert stderr is not None
+        try:
+            for line in stderr:
+                self._stderr_tail.append(line.rstrip("\n"))
+        except (ValueError, OSError):
+            # Stream closed underneath us during shutdown.
+            pass
+
+    @property
+    def stderr_tail(self) -> str:
+        """Last few lines the server wrote to stderr, oldest first."""
+        return "\n".join(self._stderr_tail)
 
     # ------------------------------------------------------------------
     # Construction
@@ -70,6 +103,14 @@ class MCPSession:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            # MCP is UTF-8 on the wire. Without this, text mode decodes with the
+            # platform locale (cp936 on this machine), which corrupts any
+            # non-ASCII payload — and `_send` writes with ensure_ascii=False.
+            encoding="utf-8",
+            # A single undecodable byte would otherwise raise inside the reader
+            # thread, killing it silently and turning every later call into a
+            # timeout. Degrading one character beats losing the transport.
+            errors="replace",
             bufsize=1,  # line-buffered
             env=env,
             cwd=cwd,
@@ -78,6 +119,16 @@ class MCPSession:
         session = cls(proc, client)
         try:
             session._handshake(timeout_s=initialize_timeout_s)
+        except MCPProtocolError as exc:
+            # Give the drain thread a moment to collect a crashing server's
+            # last words before the pipes are closed.
+            if session._stderr_thread is not None:
+                session._stderr_thread.join(timeout=0.5)
+            tail = session.stderr_tail
+            session.shutdown(force=True)
+            if tail:
+                raise type(exc)(f"{exc}\n--- server stderr (tail) ---\n{tail}") from exc
+            raise
         except Exception:
             session.shutdown(force=True)
             raise
@@ -100,11 +151,16 @@ class MCPSession:
     # Tool discovery + invocation
     # ------------------------------------------------------------------
 
-    def list_tools(self, *, refresh: bool = False) -> list[MCPToolInfo]:
+    def list_tools(
+        self,
+        *,
+        refresh: bool = False,
+        timeout_s: float = _DEFAULT_REQUEST_TIMEOUT,
+    ) -> list[MCPToolInfo]:
         """Return tools advertised by the server. Cached after first call."""
         if self._tools_cache is not None and not refresh:
             return self._tools_cache
-        result = self._client.request("tools/list")
+        result = self._client.request("tools/list", timeout_s=timeout_s)
         tools_raw = result.get("tools", [])
         if not isinstance(tools_raw, list):
             raise MCPProtocolError(f"tools/list returned non-list: {type(tools_raw).__name__}")
@@ -122,7 +178,13 @@ class MCPSession:
         self._tools_cache = parsed
         return parsed
 
-    def call_tool(self, name: str, arguments: dict, *, timeout_s: float = 30.0) -> dict:
+    def call_tool(
+        self,
+        name: str,
+        arguments: dict,
+        *,
+        timeout_s: float = _DEFAULT_REQUEST_TIMEOUT,
+    ) -> dict:
         """Invoke a tool. Returns the raw `result` block from the server.
 
         The result typically contains `content` (list of content blocks) and
@@ -143,10 +205,20 @@ class MCPSession:
         return dict(self._server_info or {})
 
     def shutdown(self, *, timeout_s: float = _DEFAULT_SHUTDOWN_TIMEOUT, force: bool = False) -> None:
-        """Close stdin and wait for the server to exit. Terminate if it hangs."""
+        """Close stdin and wait for the server to exit. Terminate if it hangs.
+
+        `force=True` skips the graceful wait: the caller already knows the
+        session is broken (failed handshake, or `__exit__` unwinding an
+        exception), so spending `timeout_s` waiting for a clean exit buys
+        nothing. Escalation beyond terminate is unchanged.
+        """
         self._client.close()
         try:
-            self._proc.wait(timeout=timeout_s)
+            if force:
+                self._proc.terminate()
+                self._proc.wait(timeout=1.0)
+            else:
+                self._proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             self._proc.terminate()
             try:
@@ -154,6 +226,9 @@ class MCPSession:
             except subprocess.TimeoutExpired:
                 self._proc.kill()
         finally:
+            self._client.join_reader()
+            if self._stderr_thread is not None:
+                self._stderr_thread.join(timeout=1.0)
             for stream in (self._proc.stdout, self._proc.stderr):
                 if stream is not None:
                     try:

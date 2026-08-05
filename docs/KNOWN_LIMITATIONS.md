@@ -1419,3 +1419,86 @@ Same shape as L12 — short code, long verification:
   environment through, but it is opt-in; the default path is this one.
 
 ---
+
+## L14. The MCP client is validated only against an in-repo fixture server — several protocol gaps cannot be falsified until a real server is bound
+
+### Symptom
+
+`discover_and_register()` (`reforge/runtime/skills/mcp/discovery.py`) is called
+from exactly one place in the repository: `reforge/tests/test_mcp_integration.py`.
+The only server it has ever spoken to is `reforge/tests/_mcp_test_server.py`, a
+~150-line stdlib fixture. Nothing in `reforge/cli/`, `reforge/benchmark/`,
+`scripts/`, or `default_skill_registry()` binds an MCP server, and no config
+file carries an `mcpServers` key.
+
+That is not itself the limitation — the transport is genuinely exercised
+end-to-end over real pipes and a real subprocess. The limitation is what that
+narrow surface *hides*: a fixture that is well-behaved by construction cannot
+falsify the client's handling of servers that are not.
+
+### Deferred debt — real gaps, currently unreachable
+
+These are defects, not trade-offs. Each is latent only because the fixture
+server never triggers it.
+
+| Gap | Where | What triggers it |
+|---|---|---|
+| `env=` is passed straight to `Popen` without merging `os.environ` — Popen *replaces* the environment rather than extending it | `session.py` `connect()` | Any server needing `PATH`. The test suite already works around this by hand (`test_mcp_integration.py` builds `{**os.environ, ...}`) — a workaround in a test is the tell |
+| `kill()` is not followed by `wait()`, leaving a zombie window on POSIX | `session.py` `shutdown()` | A server that ignores both stdin-EOF and `terminate()` |
+| No process group / job object, so grandchildren survive `terminate()` | `session.py` `connect()` | `npx`-, `uvx`-, or shell-launched servers, i.e. most published ones |
+| JSON-RPC `error.code` / `error.data` are flattened into an f-string; callers cannot branch on the code | `client.py` `request()` | Any caller wanting to distinguish "method not found" from "invalid params" |
+| Lines skipped as malformed on stdout are dropped without a counter or log | `client.py` `_read_loop()` | Debugging a server that interleaves logs with frames — currently a black box |
+
+### Scope-bound gaps — not "we don't need this"
+
+The following are unimplemented, and the honest framing is *not* that they are
+unnecessary. It is that **within the current binding surface — one fixture
+server we control — there is no way to falsify a decision about them.** They
+become real requirements the moment a third-party server is bound, and each
+should be re-opened at that point rather than defended.
+
+| Unimplemented | Becomes a real requirement when |
+|---|---|
+| `tools/list` pagination (`nextCursor` is ignored; only page one is read) | A server advertises more tools than fit one page — the failure is silent tool loss, not an error |
+| Notification dispatch (`notifications/*` are read and discarded, no handler registry) | A server emits `tools/list_changed`; the `list_tools` cache is currently never invalidated |
+| Capability negotiation (client sends `capabilities: {}`; the server's returned `capabilities` is discarded) | A server gates methods on declared capabilities, or the runtime wants `roots`/`sampling` |
+| `protocolVersion` validation (pinned to `"2024-11-05"`; the server's reply is not checked) | A server speaks only a later revision — currently the mismatch is silent |
+| Server-initiated requests (a frame with an unrecognised `id` is discarded and never answered) | A server issues `sampling/createMessage` or `roots/list` and blocks waiting for a reply |
+
+### Why this framing matters
+
+The distinction is the point of this entry. "We don't need pagination" is a
+claim about MCP servers in general and it is false. "We cannot yet tell whether
+we need pagination, because we have only ever talked to a server with five
+tools" is a claim about *this repository's evidence*, and it is true. The
+second framing also names its own expiry condition; the first does not.
+
+### Not in this list: timeouts
+
+`timeout_s` was accepted by `MCPClient.request()` and never used — the read
+loop blocked forever. That one was not scope-bound (it fired against the
+fixture server as readily as against anything else) and has been fixed: reads
+now run on a dedicated thread and honour a deadline. It is recorded here only
+to mark the boundary — a parameter that promises behaviour it does not deliver
+is a defect, not a deferred decision, and does not belong on this list.
+
+### Trigger to revisit
+
+A real MCP server is bound (the `discover_and_register` command argument points
+at anything other than `_mcp_test_server`). At that moment the "deferred debt"
+rows above stop being latent, and every "scope-bound" row must be re-evaluated
+against that specific server's behaviour.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Implementing the scope-bound items speculatively before a real server is
+  bound. Each needs a concrete server to validate against; building them now
+  produces untested code justified by imagined requirements.
+- ❌ Citing "we only use one server" as a *reason* these are fine. It is the
+  reason they are unfalsifiable, which is the opposite of fine.
+- ❌ Merging `os.environ` into `env=` inside `MCPSession.connect()` without
+  deciding the credential-passing question first — see L13. The subprocess
+  backend's environment leak has the same shape, and MCP servers are spawned
+  processes too.
+
+---

@@ -15,7 +15,11 @@ Quick start:
     # n tools from the server are now available alongside built-in skills
 """
 
-from reforge.runtime.skills.mcp.client import MCPClient, MCPProtocolError
+from reforge.runtime.skills.mcp.client import (
+    MCPClient,
+    MCPProtocolError,
+    MCPTimeoutError,
+)
 from reforge.runtime.skills.mcp.discovery import discover_and_register
 from reforge.runtime.skills.mcp.session import MCPSession, MCPToolInfo
 from reforge.runtime.skills.mcp.skill import MCPSkill
@@ -25,6 +29,7 @@ __all__ = [
     "MCPProtocolError",
     "MCPSession",
     "MCPSkill",
+    "MCPTimeoutError",
     "MCPToolInfo",
     "discover_and_register",
 ]
