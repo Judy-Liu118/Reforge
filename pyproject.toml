@@ -39,9 +39,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Pillow and playwright are OPTIONAL at runtime and stay out of `dependencies`:
+# `_maybe_downscale` passes images through unchanged when PIL is absent, and
+# `default_skill_registry` simply does not register web_screenshot when
+# playwright is missing. But the tests that cover those two branches need the
+# packages present — without them the tests skip, and a skip reads as green.
+# See docs/KNOWN_LIMITATIONS.md L15.
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=1.4.0",
+    # Image.LANCZOS is what image_compare uses; kept as an alias in 10.x
+    # (it was ANTIALIAS that 10.0 removed).
+    "Pillow>=10.0",
+    # Only the importable package is needed — `_playwright_available()` calls
+    # `importlib.util.find_spec`, so no `playwright install <browser>` step.
+    "playwright>=1.40",
 ]
 dev = [
     "pytest>=8.0",
