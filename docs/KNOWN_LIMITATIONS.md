@@ -1502,3 +1502,143 @@ against that specific server's behaviour.
   processes too.
 
 ---
+
+## L15. The local and CI skip sets differ and are complementary — neither run has ever executed the whole suite
+
+### Symptom
+
+Both runs reported the same summary line. They did not run the same tests.
+
+| | passed | skipped | skipped *there and not here* |
+|---|---|---|---|
+| local (this machine) | 1853 | 7 | 3 × docker integration |
+| CI (ubuntu-latest) | 1853 | 7 | BIRD, Pillow, playwright |
+
+Four skips are common to both and deliberate (2 × LLM smoke, the docker
+sentinel, tavily — each needs a credential or an explicit opt-in). The
+remaining three on each side were **complementary**: docker was available only
+in CI, while the BIRD dataset, Pillow and playwright were installed only
+locally. Three against three, so `passed` and `skipped` came out identical on
+both sides — 1853 and 7 — while the underlying sets did not overlap.
+
+Of 1860 collected tests, **no single run has ever executed more than 1853**,
+and the two 1853s are different 1853s.
+
+### Why the numbers concealed it
+
+The summary line is a count, and counts are invariant under substitution. A
+test that stops running and a test that starts running cancel out perfectly.
+Nothing in `passed`/`skipped` can distinguish "the same suite ran twice" from
+"two different subsets ran once each" — only the SKIPPED list can, and that
+list only became visible on the run page in 1a363a0. The discrepancy was
+found the first time a human read that list.
+
+### What has already been narrowed
+
+Adding Pillow and playwright to the `[test]` extra, and making `dev` reference
+`test` instead of repeating it, removes two of the three CI-only skips. What
+remains is asymmetric in a way that matters:
+
+| Gap | Direction | Nature |
+|---|---|---|
+| docker (3 tests) | present in CI, absent locally | environment **state** — Docker Desktop simply was not running; starting it closes the gap with no code change |
+| BIRD (1 test) | present locally, absent in CI | environment **content** — a 2.1 GB dataset that is `.gitignore`d (`data/`) and cannot be shipped to a runner cheaply |
+
+They point in opposite directions and cannot be closed the same way. Treating
+"make the skip sets match" as one task is the mistake this table exists to
+prevent.
+
+### Why BIRD is not a CI candidate
+
+Two separate reasons, and they carry different weight:
+
+1. **Size — measured.** `data/bird` is 2.1 GB locally (`dev.json` itself is
+   only 724 K; the bulk is `dev_databases/*/*.sqlite`, which the test needs
+   because its `has_db` callback stats those files). Downloading or caching
+   that per run is not proportionate to one assertion.
+2. **Distribution terms — NOT verified.** There is no LICENSE, README or terms
+   file under `data/bird`, and no check of BIRD's redistribution conditions has
+   been made. This is recorded as an **open question, not a known obstacle** —
+   it may well be permissive. It must be resolved before any workflow copies
+   the dataset, but reason (1) is sufficient on its own to keep it out of the
+   ordinary CI path.
+
+The test it guards, `test_frozen_list_matches_rule_on_real_bird_data`, asserts
+that the frozen `PHASE1_CASE_IDS` really is what the selection rule produces
+from the real dataset. The rule's own determinism and exclusion logic are
+covered by a sibling test on synthetic entries, which does run in CI; what is
+missing is only the alignment against real data — a drift sentinel for the
+benchmark's reproducibility, not a runtime regression test.
+
+### Relationship to the docker sentinel
+
+`test_docker_is_available_where_required` exists because a fully-skipped
+selection still exits 0, so a runner that lost its daemon would keep reporting
+green while testing nothing. That sentinel defends one direction: a skip that
+should have been a pass.
+
+This entry is the same failure mode seen from the other side. **The skip set is
+a function of the environment, and nothing asserts it.** The sentinel covers
+one dependency, in one environment, because someone anticipated that specific
+loss. Every other optional dependency — Pillow, playwright, BIRD, tavily,
+network access — silently reshapes the skip set with no signal at all.
+
+### Open question: can skip-set drift be made an explicit signal?
+
+Asked and reasoned afresh, not inherited from the earlier rejection of
+"assert exactly N skips". That form was rejected because a bare count must be
+edited on every intentional change and carries no semantics. A *set* is a
+different proposition: its diff names what moved.
+
+**Assessment: worth doing, in one specific form — a CI-side snapshot.**
+
+- **Mechanism.** Run pytest with `--junitxml`, extract the node ids of
+  `<skipped>` cases, and diff against a checked-in expected list. Node ids are
+  used deliberately in place of the `SKIPPED path:line:` text, whose line
+  numbers shift whenever anything above the test is edited — a false alarm
+  source with no semantic content. Node ids move only when a test is renamed,
+  added or removed, which is exactly when a human should confirm the change.
+- **What it would have done here.** The Pillow/playwright fix would have turned
+  CI red with "these two no longer skip — update the list". That is the desired
+  outcome: the confirmation currently depends on a human predicting 1855 and
+  checking it by eye.
+- **Scope limit, and it is real.** This can only be applied to CI. Local
+  environments are not enumerable — every contributor's machine has a different
+  combination of docker, credentials and optional packages, so there is no
+  single expected set to assert against. It therefore covers **one side of the
+  very asymmetry this entry is about**. That is still the more valuable side:
+  a developer watches local output constantly and would notice a change, while
+  CI is usually consulted only for its colour.
+- **Why not a sentinel per dependency instead.** The sentinel form is strictly
+  stronger — it asserts a *capability* ("docker must actually work here"), not
+  a *phenomenon* ("this test skipped"). But it needs one env flag and one test
+  per dependency, plus a decision about which environments declare which
+  dependency mandatory. That is a larger, more opinionated change; the snapshot
+  is the cheap instrument that reports drift without adjudicating it.
+
+**Not implemented here.** It is a mitigation with its own maintenance surface,
+not a fix for this limitation, and it should be adopted as a deliberate change
+rather than folded into an unrelated commit.
+
+### Trigger to revisit
+
+- A third skip-set asymmetry appears (a fourth optional dependency, a new
+  credential-gated test). Two was arguable; three means the snapshot above
+  should stop being an open question.
+- BIRD's distribution terms are established, or the dataset gains a small
+  fixture subset sufficient for the frozen-list assertion.
+- Docker Desktop becomes reliably available locally, which would leave BIRD as
+  the sole asymmetry and make the whole item much cheaper to close.
+
+### Anti-patterns — do NOT apply
+
+- ❌ Asserting a skip *count*. It is invariant under substitution — the exact
+  blindness that produced this entry, since both sides reported 7.
+- ❌ Treating "make local and CI skip the same things" as one task. The two
+  remaining gaps point in opposite directions (see the table above).
+- ❌ Deleting the skipped tests to make the sets match. They cover real
+  branches; the problem is that nobody is told when they stop running.
+- ❌ Reading equal summary lines as equal coverage. That inference is what
+  failed here, and it failed while both numbers were correct.
+
+---
