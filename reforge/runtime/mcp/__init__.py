@@ -11,8 +11,13 @@ runtime governance to the MCP ecosystem.
 
 Quick start:
     from reforge.runtime.mcp import discover_and_register
-    n = discover_and_register(registry, ["python", "-m", "my_mcp_server"])
-    # n tools from the server are now available alongside built-in skills
+
+    cmd = ["python", "-m", "my_mcp_server"]
+    session, skills = discover_and_register(registry, cmd)
+    try:
+        ...  # the len(skills) tools are now callable through `registry`
+    finally:
+        session.shutdown()  # the caller owns the session; nothing else closes it
 """
 
 from reforge.runtime.mcp.client import (
