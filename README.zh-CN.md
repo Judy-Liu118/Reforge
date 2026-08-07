@@ -206,7 +206,8 @@ reforge/
 ├── runtime/
 │   ├── orchestration/   governor 流水线 · LangGraph 节点 · 评估
 │   ├── events/          事件日志 + 持久化 + 投影
-│   ├── skills/          Skill Protocol + builtin/ + MCP 客户端
+│   ├── skills/          Skill Protocol + builtin/
+│   ├── mcp/             stdio JSON-RPC 客户端 + Skill 适配器
 │   └── policy/          RetryPolicy + TaskIntent
 ├── memory/              单一 Protocol 之后的 3 层记忆基座（JSON / SQLite）
 ├── observability/       链路追踪 + 纯标准库 Web 仪表盘

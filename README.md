@@ -220,7 +220,8 @@ reforge/
 ├── runtime/
 │   ├── orchestration/   governor pipeline · LangGraph nodes · evaluation
 │   ├── events/          event log + persistence + projection
-│   ├── skills/          Skill Protocol + builtin/ + MCP client
+│   ├── skills/          Skill Protocol + builtin/
+│   ├── mcp/             stdio JSON-RPC client + Skill adapter
 │   └── policy/          RetryPolicy + TaskIntent
 ├── memory/              3-layer substrate behind one Protocol (JSON / SQLite)
 ├── observability/       tracing + stdlib web dashboard
