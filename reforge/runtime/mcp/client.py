@@ -21,12 +21,16 @@ notifications never blocks on a full pipe.
 
 from __future__ import annotations
 
+import collections
 import json
 import queue
 import subprocess
 import threading
 import time
 from typing import Any
+
+_DROPPED_SAMPLE_LINES = 3
+_DROPPED_SAMPLE_CHARS = 200
 
 
 class MCPProtocolError(RuntimeError):
@@ -66,6 +70,10 @@ class MCPClient:
         self._lock = threading.Lock()
         self._next_id = 1
         self._frames: queue.Queue[Any] = queue.Queue()
+        self._dropped_lines = 0
+        self._dropped_samples: collections.deque[str] = collections.deque(
+            maxlen=_DROPPED_SAMPLE_LINES
+        )
         self._reader = threading.Thread(
             target=self._read_loop, name="mcp-stdout-reader", daemon=True
         )
@@ -129,7 +137,8 @@ class MCPClient:
 
         Malformed lines are dropped here rather than at the call site — some
         servers emit plain-text logs to stdout, and those must not be mistaken
-        for a response nor left to fill the pipe.
+        for a response nor left to fill the pipe. They are counted on the way
+        out (see `_note_dropped`) so the drop is not also invisible.
         """
         stdout = self._proc.stdout
         assert stdout is not None
@@ -138,14 +147,46 @@ class MCPClient:
                 try:
                     frame = json.loads(line)
                 except json.JSONDecodeError:
+                    self._note_dropped(line)
                     continue
                 if isinstance(frame, dict):
                     self._frames.put(frame)
+                else:
+                    # Valid JSON, but a bare scalar or array is not a JSON-RPC
+                    # frame — same class of drop, same counter.
+                    self._note_dropped(line)
         except (ValueError, OSError):
             # Stream closed underneath us during shutdown; EOF is signalled below.
             pass
         finally:
             self._frames.put(_EOF)
+
+    def _note_dropped(self, line: str) -> None:
+        """Record a stdout line that was not usable as a JSON-RPC frame.
+
+        Only the reader thread writes these, so no lock is needed; a caller may
+        read a count one behind, which is fine for a diagnostic. Worth keeping
+        at all because the silent version makes a server that interleaves
+        plain-text logs with frames look identical to one that is merely slow —
+        the reply never arrives either way, and nothing says why.
+        """
+        self._dropped_lines += 1
+        self._dropped_samples.append(line.rstrip("\n")[:_DROPPED_SAMPLE_CHARS])
+
+    @property
+    def dropped_stdout_lines(self) -> int:
+        """How many stdout lines were discarded as non-JSON-RPC frames."""
+        return self._dropped_lines
+
+    def _drop_note(self) -> str:
+        """Suffix for failure messages naming discarded lines; empty when none."""
+        if not self._dropped_lines:
+            return ""
+        recent = " | ".join(self._dropped_samples)
+        return (
+            f" [{self._dropped_lines} non-JSON stdout line(s) discarded;"
+            f" most recent: {recent}]"
+        )
 
     def _read_until_id(self, expected_id: int, *, timeout_s: float) -> dict:
         """Pull frames from the reader thread until one matches *expected_id*.
@@ -160,13 +201,15 @@ class MCPClient:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise MCPTimeoutError(
-                    f"server did not respond to id={expected_id} within {timeout_s}s"
+                    f"server did not respond to id={expected_id} within "
+                    f"{timeout_s}s{self._drop_note()}"
                 )
             try:
                 frame = self._frames.get(timeout=remaining)
             except queue.Empty:
                 raise MCPTimeoutError(
-                    f"server did not respond to id={expected_id} within {timeout_s}s"
+                    f"server did not respond to id={expected_id} within "
+                    f"{timeout_s}s{self._drop_note()}"
                 ) from None
             if frame is _EOF:
                 # Sticky: every later caller must see EOF too, not a timeout.
@@ -174,7 +217,7 @@ class MCPClient:
                 returncode = self._proc.poll()
                 raise MCPProtocolError(
                     f"server closed stdout before responding to id={expected_id} "
-                    f"(returncode={returncode})"
+                    f"(returncode={returncode}){self._drop_note()}"
                 )
             if frame.get("id") == expected_id:
                 return frame

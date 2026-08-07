@@ -9,10 +9,12 @@ MCPSkill stack end-to-end. Exposes five tools:
   - hang()          : never responds (for client-side timeout tests)
   - spew_stderr(kb) : floods stderr, then returns (for drain/deadlock tests)
 
-Two environment switches shape misbehaviour that is otherwise hard to stage:
+Four environment switches shape misbehaviour that is otherwise hard to stage:
 
   REFORGE_TEST_MCP_SWALLOW=<method>  drop that method silently, never answer
   REFORGE_TEST_MCP_LINGER=1          keep running after stdin closes
+  REFORGE_TEST_MCP_IGNORE_SIGTERM=1  ignore SIGTERM (POSIX), forcing SIGKILL
+  REFORGE_TEST_MCP_STDOUT_NOISE=1    interleave plain-text log lines with frames
 
 Run as a subprocess with stdio JSON-RPC. Designed to be `python -m` invokable.
 """
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import time
 
@@ -32,6 +35,14 @@ sys.stderr.reconfigure(encoding="utf-8")
 
 _SWALLOW = os.environ.get("REFORGE_TEST_MCP_SWALLOW", "")
 _LINGER = bool(os.environ.get("REFORGE_TEST_MCP_LINGER"))
+_STDOUT_NOISE = bool(os.environ.get("REFORGE_TEST_MCP_STDOUT_NOISE"))
+
+if os.environ.get("REFORGE_TEST_MCP_IGNORE_SIGTERM"):
+    # Only meaningful on POSIX. On Windows `Popen.terminate()` is
+    # TerminateProcess, which no handler can intercept, so the SIGKILL
+    # escalation this stages is unreachable there — the test that uses this
+    # switch skips on Windows for exactly that reason.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 
 def _write(payload: dict) -> None:
@@ -124,6 +135,13 @@ def main() -> None:
         method = msg.get("method")
         req_id = msg.get("id")
         params = msg.get("params") or {}
+
+        if _STDOUT_NOISE:
+            # A plain-text log line on stdout: something real servers do, and
+            # invalid as a JSON-RPC frame. Emitted before dispatch so even the
+            # never-answering `hang` path produces one.
+            sys.stdout.write("[reforge-test-server] handling request\n")
+            sys.stdout.flush()
 
         # Notifications have no id; do not respond.
         if method == "notifications/initialized":

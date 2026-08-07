@@ -1444,10 +1444,8 @@ server never triggers it.
 | Gap | Where | What triggers it |
 |---|---|---|
 | `env=` is passed straight to `Popen` without merging `os.environ` — Popen *replaces* the environment rather than extending it | `session.py` `connect()` | Any server needing `PATH`. The test suite already works around this by hand (`test_mcp_integration.py` builds `{**os.environ, ...}`) — a workaround in a test is the tell |
-| `kill()` is not followed by `wait()`, leaving a zombie window on POSIX | `session.py` `shutdown()` | A server that ignores both stdin-EOF and `terminate()` |
 | No process group / job object, so grandchildren survive `terminate()` | `session.py` `connect()` | `npx`-, `uvx`-, or shell-launched servers, i.e. most published ones |
 | JSON-RPC `error.code` / `error.data` are flattened into an f-string; callers cannot branch on the code | `client.py` `request()` | Any caller wanting to distinguish "method not found" from "invalid params" |
-| Lines skipped as malformed on stdout are dropped without a counter or log | `client.py` `_read_loop()` | Debugging a server that interleaves logs with frames — currently a black box |
 
 ### Scope-bound gaps — not "we don't need this"
 
@@ -1473,14 +1471,33 @@ we need pagination, because we have only ever talked to a server with five
 tools" is a claim about *this repository's evidence*, and it is true. The
 second framing also names its own expiry condition; the first does not.
 
-### Not in this list: timeouts
+### Not in this list: three that were fixed
+
+The same boundary has now been drawn three times: **if the fixture server can
+trigger it, it is a defect rather than a deferred decision**, and it belongs on
+neither table above.
 
 `timeout_s` was accepted by `MCPClient.request()` and never used — the read
 loop blocked forever. That one was not scope-bound (it fired against the
 fixture server as readily as against anything else) and has been fixed: reads
-now run on a dedicated thread and honour a deadline. It is recorded here only
-to mark the boundary — a parameter that promises behaviour it does not deliver
-is a defect, not a deferred decision, and does not belong on this list.
+now run on a dedicated thread and honour a deadline. A parameter that promises
+behaviour it does not deliver is a defect, not a deferred decision.
+
+`kill()` without a following `wait()` (formerly deferred-debt row 2) is fixed:
+`shutdown()` now reaps with `wait(timeout=1.0)` after SIGKILL. Calling it
+"latent" was itself the error — it was latent not because the fixture is
+well-behaved but because the fixture had no *way* to misbehave. The fix adds
+`REFORGE_TEST_MCP_IGNORE_SIGTERM=1` to `_mcp_test_server.py` so the path can be
+falsified. That test skips on Windows (`kill()` is `terminate()` there and
+zombies do not exist) and executes only on Linux CI — see L15 on the local/CI
+skip sets being complementary.
+
+Malformed stdout lines dropped without a counter (formerly deferred-debt row 5)
+is fixed: `MCPClient` counts them, retains the last 3 as samples, and appends
+that as a suffix to timeout and EOF failure messages. The value is not the
+counter but *where it surfaces* — a server interleaving logs into stdout was
+previously indistinguishable, in the error message, from one that is simply
+slow. `REFORGE_TEST_MCP_STDOUT_NOISE=1` makes it falsifiable.
 
 ### Trigger to revisit
 
@@ -1514,6 +1531,16 @@ Both runs reported the same summary line. They did not run the same tests.
 | local (this machine) | 1853 | 7 | 3 × docker integration |
 | CI (ubuntu-latest) | 1853 | 7 | BIRD, Pillow, playwright |
 
+**Collection conditions for the local row — data, not context.** It was measured
+with **Docker Desktop not running**. That single fact is the entire reason the
+three docker integration tests show up as its exclusive skips; nothing about the
+machine, the OS or the checkout produced them. The condition was not recorded at
+the time and is written in retrospectively (2026-08-07), which is itself an
+instance of what this entry is about: *"local" is not a place, it is a reading of
+one machine in one state.* A measurement whose conditions go unwritten silently
+becomes a claim about the wrong thing the moment those conditions change — and
+below, they changed.
+
 Four skips are common to both and deliberate (2 × LLM smoke, the docker
 sentinel, tavily — each needs a credential or an explicit opt-in). The
 remaining three on each side were **complementary**: docker was available only
@@ -1539,14 +1566,109 @@ Adding Pillow and playwright to the `[test]` extra, and making `dev` reference
 `test` instead of repeating it, removes two of the three CI-only skips. What
 remains is asymmetric in a way that matters:
 
-| Gap | Direction | Nature |
-|---|---|---|
-| docker (3 tests) | present in CI, absent locally | environment **state** — Docker Desktop simply was not running; starting it closes the gap with no code change |
-| BIRD (1 test) | present locally, absent in CI | environment **content** — a 2.1 GB dataset that is `.gitignore`d (`data/`) and cannot be shipped to a runner cheaply |
+| Gap | Direction | Nature | Closable? |
+|---|---|---|---|
+| docker (3 tests) | present in CI, absent locally | environment **state** — Docker Desktop simply was not running; starting it closes the gap with no code change | yes, and it has been — but state flips back, see below |
+| BIRD (1 test) | present locally, absent in CI | environment **content** — a 2.1 GB dataset that is `.gitignore`d (`data/`) and cannot be shipped to a runner cheaply | in principle, via a fixture subset |
+| POSIX zombie-reap (1 test) | present in CI, absent locally | environment **platform** — `test_kill_escalation_reaps_the_child` asserts that `shutdown()` reaps after SIGKILL. On Windows `kill()` *is* `terminate()`, TerminateProcess cannot be ignored, and zombies do not exist | **no** — the asserted path does not exist on the other platform |
 
-They point in opposite directions and cannot be closed the same way. Treating
+They point in different directions and cannot be closed the same way. Treating
 "make the skip sets match" as one task is the mistake this table exists to
-prevent.
+prevent. The third row makes that sharper than the first two did: docker is a
+service you can start and BIRD is a file you could ship, but no amount of
+environment work makes a zombie exist on Windows. It is the first asymmetry here
+that is **permanent by construction**, and a permanent gap cannot be managed by
+closing it — only by being seen.
+
+### Re-measured 2026-08-07: the same illusion, on this entry's own numbers
+
+Local was re-run with Docker Desktop **running**, on a tree that also adds one
+POSIX-only test. The local skip set moved by four:
+
+- **−3** docker integration — the daemon was up (`docker version` reported
+  `linux/29.4.0`), so those tests executed instead of skipping
+- **+1** `test_kill_escalation_reaps_the_child`, added by the MCP defect fixes
+
+Local is now **5 skips, measured**, whole suite, exit 0:
+
+```
+1859 passed, 5 skipped in 95.06s (0:01:35)
+```
+
+SKIPPED: 2 × LLM smoke, the docker sentinel, tavily, POSIX zombie-reap. The
+arithmetic reconciles exactly against the baseline row, which is worth stating
+because it is the only reason the new numbers can be trusted as the *same*
+measurement rather than a differently-shaped one: collected goes 1860 → 1864
+(+4 MCP tests), and passed goes 1853 → 1859 (+3 docker integration now
+executing, +4 new tests, −1 of them skipped here).
+
+A note on obtaining that line, since it cost three runs: `addopts` in
+`pyproject.toml` already contains `-q`, so passing `-q` again on the command
+line yields `-qq`, and `-qq` **suppresses the final count line entirely**. Two
+runs reported only `exit 0` and a SKIPPED list, with no totals. Run the suite as
+`pytest reforge/tests -rs` and let `addopts` supply the `-q`.
+
+CI's side is **derived, not observed** — `gh` is not installed on this machine
+and no CI run has been read since. Derivation: the baseline 7 loses Pillow and
+playwright (cb04992 moved them into the `[test]` extra), keeps BIRD, and gains
+nothing, because the new POSIX test *runs* on ubuntu. CI: **5, derived**.
+
+| | skipped | skipped *there and not here* |
+|---|---|---|
+| local (Windows, docker running) | 5 — measured | POSIX zombie-reap |
+| CI (ubuntu-latest) | 5 — derived | BIRD |
+
+**Equal counts, disjoint exclusive sets — for the second time.** The first time
+it was three against three and both sides read 7. This time it is one against
+one and both sides read 5. The mechanism is unchanged and is already stated in
+"Why the numbers concealed it": counts are invariant under substitution.
+
+What is new is *where* it recurred. Not in some unrelated suite — in **this
+entry's own table**, during the interval between writing the warning and
+re-reading it. A documented failure mode that reproduces inside the document
+describing it falsifies, by example, the assumption that a human reading the
+SKIPPED list is sufficient control.
+
+### Adjudication: is the POSIX-only test the third asymmetry?
+
+**Yes. The trigger has fired.** The rule binds whoever set it, so the reasoning
+is recorded rather than asserted.
+
+**On the wording.** The trigger reads "A third skip-set asymmetry appears", with
+"(a fourth optional dependency, a new credential-gated test)" appended. The new
+test is neither. But the parenthetical enumerates *ways one might appear*, not
+conditions of appearance; the head clause governs, and this is a skip-set
+asymmetry under the entry's own definition — a test that runs on one side and
+not the other for environmental reasons.
+
+**The counter-argument, stated fairly.** With docker running, the
+*instantaneously active* asymmetries are BIRD and POSIX: two, not three. One
+could argue the threshold has not been reached.
+
+**Why it fails.** Two reasons. First, docker's closure is a state observation
+from a single day; the trigger's own third bullet asks for Docker Desktop to
+become "reliably available", and one reading of `docker version` is not
+reliability. Booking it closed is precisely the inference the anti-patterns
+forbid — one measurement treated as a property. Second, the trigger counts
+asymmetries *appearing*, not live ones outstanding. Read as a live count it
+would be effectively unfirable, since any asymmetry can be masked on the day
+someone happens to check.
+
+**The decisive evidence is not definitional.** It is that the failure mode
+reproduced above on this entry's own numbers, and that the new asymmetry is the
+first that **cannot be closed at all**. Both original two were arguable partly
+because each had a route to closure; "we will fix it and the question goes away"
+is not available for a platform gap.
+
+**Author's discount, declared.** This asymmetry was introduced by the same
+change now invoking the rule. That warrants a stricter reading, not a lenient
+one — the cheapest way to keep a self-imposed rule from ever firing is to judge
+one's own case generously. Noted so that leniency, if present, is visible.
+
+**Consequence.** The CI-side snapshot moves from "open question, worth doing" to
+**due**. Deliberately not implemented here: the entry already states it must be
+adopted as its own change, and folding it into a commit about MCP defects would
+break that instruction on the same page that issues it.
 
 ### Why BIRD is not a CI candidate
 
@@ -1622,9 +1744,12 @@ rather than folded into an unrelated commit.
 
 ### Trigger to revisit
 
-- A third skip-set asymmetry appears (a fourth optional dependency, a new
+- ~~A third skip-set asymmetry appears (a fourth optional dependency, a new
   credential-gated test). Two was arguable; three means the snapshot above
-  should stop being an open question.
+  should stop being an open question.~~ **FIRED 2026-08-07** — see the
+  adjudication below. The snapshot is no longer an open question; it is due, and
+  due as its own change (this entry's own instruction: not folded into an
+  unrelated commit).
 - BIRD's distribution terms are established, or the dataset gains a small
   fixture subset sufficient for the frozen-list assertion.
 - Docker Desktop becomes reliably available locally, which would leave BIRD as
@@ -1633,9 +1758,15 @@ rather than folded into an unrelated commit.
 ### Anti-patterns — do NOT apply
 
 - ❌ Asserting a skip *count*. It is invariant under substitution — the exact
-  blindness that produced this entry, since both sides reported 7.
-- ❌ Treating "make local and CI skip the same things" as one task. The two
-  remaining gaps point in opposite directions (see the table above).
+  blindness that produced this entry, since both sides reported 7, and then
+  reproduced it at 5.
+- ❌ Treating "make local and CI skip the same things" as one task. The
+  remaining gaps point in different directions and one of them cannot be closed
+  at all (see the table above).
+- ❌ Reading the local row as a property of "local". It is one machine in one
+  state; the docker skips vanished the day the daemon was running. Any local
+  measurement quoted without its collection conditions is a claim about the
+  wrong thing.
 - ❌ Deleting the skipped tests to make the sets match. They cover real
   branches; the problem is that nobody is told when they stop running.
 - ❌ Reading equal summary lines as equal coverage. That inference is what

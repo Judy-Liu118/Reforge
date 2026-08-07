@@ -414,3 +414,60 @@ class TestForceShutdown:
         elapsed = time.monotonic() - start
         assert s._proc.poll() is not None
         assert elapsed >= 1.5, f"graceful path returned early after {elapsed:.1f}s"
+
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason=(
+            "POSIX-only: on Windows kill() IS terminate(), TerminateProcess "
+            "cannot be ignored, and there are no zombies — the escalation this "
+            "asserts is unreachable"
+        ),
+    )
+    def test_kill_escalation_reaps_the_child(self, watchdog) -> None:
+        """SIGKILL without wait() leaves a zombie for the process lifetime.
+
+        Asserts on `returncode`, not `poll()`: poll() performs the reap itself,
+        so it would report success even with the wait() removed. `returncode`
+        is a plain attribute that only wait()/poll() ever sets, so a populated
+        value proves shutdown() did the reaping before returning.
+        """
+        s = MCPSession.connect(
+            _SERVER_CMD,
+            env=_env(REFORGE_TEST_MCP_LINGER="1", REFORGE_TEST_MCP_IGNORE_SIGTERM="1"),
+        )
+        s.shutdown(timeout_s=0.5)
+        assert s._proc.returncode is not None, "child was killed but never reaped"
+
+
+# ---------------------------------------------------------------------------
+# Non-JSON stdout lines — dropped, but no longer silently
+# ---------------------------------------------------------------------------
+
+
+class TestDroppedStdoutLines:
+    def test_plaintext_logs_are_counted_not_just_dropped(self) -> None:
+        s = MCPSession.connect(_SERVER_CMD, env=_env(REFORGE_TEST_MCP_STDOUT_NOISE="1"))
+        try:
+            # The transport still works — noise must not break framing.
+            assert s.call_tool("echo", {"text": "ping"})["content"][0]["text"] == "ping"
+            assert s._client.dropped_stdout_lines > 0  # type: ignore[attr-defined]
+        finally:
+            s.shutdown()
+
+    def test_timeout_message_names_the_dropped_lines(self, watchdog) -> None:
+        """The payoff: a log-interleaving server no longer reads as a slow one."""
+        s = MCPSession.connect(_SERVER_CMD, env=_env(REFORGE_TEST_MCP_STDOUT_NOISE="1"))
+        try:
+            with pytest.raises(MCPTimeoutError) as exc_info:
+                s.call_tool("hang", {}, timeout_s=0.5)
+            message = str(exc_info.value)
+            assert "non-JSON stdout line" in message
+            assert "[reforge-test-server] handling request" in message
+        finally:
+            s.shutdown(force=True)
+
+    def test_clean_server_adds_no_note(self, session: MCPSession, watchdog) -> None:
+        """Counterpart: the suffix must stay absent when nothing was dropped."""
+        with pytest.raises(MCPTimeoutError) as exc_info:
+            session.call_tool("hang", {}, timeout_s=0.5)
+        assert "discarded" not in str(exc_info.value)

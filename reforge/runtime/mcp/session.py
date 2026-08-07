@@ -225,6 +225,15 @@ class MCPSession:
                 self._proc.wait(timeout=1.0)
             except subprocess.TimeoutExpired:
                 self._proc.kill()
+                try:
+                    # SIGKILL is delivered immediately, but the child stays a
+                    # zombie until its parent reaps it — and nothing else here
+                    # ever does, so the entry would survive for the rest of the
+                    # Reforge process. Invisible on Windows, where kill() is
+                    # terminate() and there are no zombies to leak.
+                    self._proc.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
         finally:
             self._client.join_reader()
             if self._stderr_thread is not None:
