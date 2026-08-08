@@ -1110,7 +1110,7 @@ runtime 手上的每一个变量 —— `DASHSCOPE_API_KEY`、`VISION_LLM_API_KE
 
 `discover_and_register()`（`reforge/runtime/mcp/discovery.py`）在整个仓库里
 只有一处调用：`reforge/tests/test_mcp_integration.py`。它对话过的唯一 server 是
-`reforge/tests/_mcp_test_server.py` —— 一个约 150 行、仅用标准库的 fixture。
+`reforge/tests/_mcp_test_server.py` —— 一个 179 行、仅用标准库的 fixture。
 `reforge/cli/`、`reforge/benchmark/`、`scripts/`、`default_skill_registry()` 都没有
 绑定任何 MCP server，也没有任何配置文件带 `mcpServers` 键。
 

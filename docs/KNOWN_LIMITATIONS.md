@@ -1427,7 +1427,7 @@ Same shape as L12 — short code, long verification:
 `discover_and_register()` (`reforge/runtime/mcp/discovery.py`) is called
 from exactly one place in the repository: `reforge/tests/test_mcp_integration.py`.
 The only server it has ever spoken to is `reforge/tests/_mcp_test_server.py`, a
-~150-line stdlib fixture. Nothing in `reforge/cli/`, `reforge/benchmark/`,
+179-line stdlib fixture. Nothing in `reforge/cli/`, `reforge/benchmark/`,
 `scripts/`, or `default_skill_registry()` binds an MCP server, and no config
 file carries an `mcpServers` key.
 
