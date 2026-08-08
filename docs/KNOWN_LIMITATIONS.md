@@ -479,7 +479,7 @@ wrapper and has been deleted):
 | `reforge/runtime/orchestration/governor/engine.py:31` (`ExecutionGovernor.__init__`) | `max_retries: int = 2` |
 
 The production runtime path goes through
-`reforge/runtime/orchestration/graph/nodes/retry_decision.py:74`:
+`reforge/runtime/orchestration/graph/nodes/retry_decision.py:70`:
 
 ```python
 governor = ExecutionGovernor(max_retries=config.max_retry)
@@ -487,7 +487,7 @@ governor = ExecutionGovernor(max_retries=config.max_retry)
 
 which reads `config.max_retry = int(os.getenv("MAX_RETRY", "3"))`
 (`reforge/config.py:18`). The bypass `_naive_resolution`
-(`retry_decision.py:50`) likewise reads `config.max_retry` directly.
+(`retry_decision.py:46`) likewise reads `config.max_retry` directly.
 **So in production all four constructor defaults are dead.**
 
 ### Why this is a seam

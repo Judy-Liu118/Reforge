@@ -365,14 +365,14 @@ Phase 2 早期设计的主动 STOP 精确率 / 召回率指标（`PHASE0_METRICS
 | `reforge/runtime/orchestration/governor/engine.py:31`（`ExecutionGovernor.__init__`） | `max_retries: int = 2` |
 
 生产环境的运行时路径走的是
-`reforge/runtime/orchestration/graph/nodes/retry_decision.py:74`：
+`reforge/runtime/orchestration/graph/nodes/retry_decision.py:70`：
 
 ```python
 governor = ExecutionGovernor(max_retries=config.max_retry)
 ```
 
 它读的是 `config.max_retry = int(os.getenv("MAX_RETRY", "3"))`（`reforge/config.py:18`）。
-旁路分支 `_naive_resolution`（`retry_decision.py:50`）同样直接读 `config.max_retry`。
+旁路分支 `_naive_resolution`（`retry_decision.py:46`）同样直接读 `config.max_retry`。
 **所以在生产环境中，这四个构造器默认值全是死代码。**
 
 ### 为什么说这是一条接缝
