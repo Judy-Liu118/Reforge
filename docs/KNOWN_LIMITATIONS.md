@@ -317,7 +317,7 @@ constraints — fall through to `if execution.exit_code != 0: RETRY
 `retry_limit_reached_with_error` STOP (budget-exhausted, NOT
 deliberate).
 
-`ClassifyStage._PATTERN_THRESHOLD` (`classify_stage.py:12, 46-58`)
+`ClassifyStage._PATTERN_THRESHOLD` (`classify_stage.py:13, 98-111`)
 exists but is **not** a STOP trigger. It only injects a
 `"[recurring failure: …]"` prefix into `repair_hint`, which steers the
 next attempt's prompt; it never flips `is_expected_failure` or

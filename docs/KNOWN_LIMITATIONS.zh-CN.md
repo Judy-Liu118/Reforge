@@ -245,7 +245,7 @@ RFC2606 `.invalid` 域名解析失败、逻辑上无解的算术、自相矛盾�
 `retry_count == max_retries`，最终以 `retry_limit_reached_with_error` STOP 收场
 （这是预算耗尽，**不是**主动 STOP）。
 
-`ClassifyStage._PATTERN_THRESHOLD`（`classify_stage.py:12, 46-58`）确实存在，但它**不是**
+`ClassifyStage._PATTERN_THRESHOLD`（`classify_stage.py:13, 98-111`）确实存在，但它**不是**
 STOP 的触发器。它只会往 `repair_hint` 里注入一个 `"[recurring failure: …]"` 前缀，用来引导
 下一次尝试的提示词；它从不翻转 `is_expected_failure` 或 `retryable`。而且它监视的是
 `evaluation_result.failure_type`，不是运行时的 traceback 签名。
