@@ -13,12 +13,22 @@ event in the same session (best-effort causal chain via log query). When
 Design principles:
   - Exceptions from the wrapped node propagate unchanged
   - event_log=None → identity wrapper, not a NOP wrapper
-  - Migrated fields (events are source of truth): after emitting, the
-    corresponding state-update value is overridden with the event-derived value.
-      retry_count, retry_decision_action  (wrap_retry_decision_node)
+  - Post-emit state overrides fall into two categories (OWNERSHIP.md
+    "Projection vs Mirror vs Dual-Write"). Only the first is event-derived:
+
+    Projection — recomputed in full from the log, so the log can always
+    overrule the stored value:
+      retry_count                         (wrap_retry_decision_node)
+
+    Mirrored — written from the same local variable as the event, in the same
+    function; never read back. Consistent on the happy path, but NOT
+    reconstructable: a wrong write site cannot be caught by rebuilding.
+      retry_decision_action               (wrap_retry_decision_node)
       eval_score, eval_passed             (wrap_evaluation_node)
       reflection_summary                  (wrap_reflection_node)
-      task_outcome, outcome_reason        (wrap_final_response_node)
+
+    wrap_final_response_node emits task_outcome / outcome_reason but overrides
+    no state at all — it is emit-only.
 
 Note on architecture: this module resides in the events/ package but imports
 RuntimeState from the state layer to type-annotate NodeFn.  This is an
@@ -166,8 +176,9 @@ def wrap_evaluation_node(
 ) -> NodeFn:
     """Emit EVALUATION_COMPLETED after the evaluation node.
 
-    Migrated fields: score and passed in evaluation_result are overridden with
-    the values emitted to the event log (events are source of truth).
+    Mirrored fields: score and passed are written into evaluation_result from
+    the same locals that were emitted to the log — never read back from it, so
+    they cannot be reconstructed if the write site is wrong.
     """
     if event_log is None:
         return node_fn
@@ -244,8 +255,9 @@ def wrap_reflection_node(
 ) -> NodeFn:
     """Emit REFLECTION_GENERATED whenever the node produces a non-empty summary.
 
-    Migrated field: semantic_state.reflection_summary is overridden with the
-    summary emitted to the event log (events are source of truth).
+    Mirrored field: semantic_state.reflection_summary is written from the same
+    `summary` local that was emitted to the log — never read back from it, so it
+    cannot be reconstructed if the write site is wrong.
 
     Both failure and success reflections are captured so that the event log
     always reflects the latest reflection state across retry sequences.
@@ -294,9 +306,12 @@ def wrap_retry_decision_node(
 ) -> NodeFn:
     """Emit POLICY_DECIDED (+ RECOVERY_ATTEMPTED when retrying) after governor.
 
-    Migrated fields: retry_decision_action and (on RETRY) retry_count in
-    control_state are overridden with event-derived values so that
-    ExecutionEventLog is the source of truth for both fields.
+    Both overrides land in control_state, but they are different categories:
+      retry_count (on RETRY) is a *projection* — recomputed in full by counting
+        RECOVERY_ATTEMPTED in the log, so the log can overrule the stored value.
+      retry_decision_action is *mirrored* — written from the same `action_str`
+        handed to policy_decided() and never read back, so it is not
+        reconstructable from the log.
     """
     if event_log is None:
         return node_fn
@@ -323,7 +338,8 @@ def wrap_retry_decision_node(
         )
 
         # retry_decision_action mirrors every POLICY_DECIDED.
-        # retry_count mirrors the cumulative RECOVERY_ATTEMPTED count on RETRY.
+        # retry_count is a projection: recomputed below from the cumulative
+        # RECOVERY_ATTEMPTED count on RETRY, not mirrored from a local.
         control_updates: dict = {"retry_decision_action": action_str}
         if action_str == "RETRY":
             attempt = state.control_state.retry_count + 1

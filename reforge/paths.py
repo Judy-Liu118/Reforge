@@ -66,7 +66,14 @@ def memory_json_dir() -> Path:
 
 
 def trajectories_path() -> Path:
-    """Cross-session trajectory log (research mode)."""
+    """Cross-session trajectory log.
+
+    Written from the main run loop (``RuntimeRunner``, at final_response)
+    whenever a TrajectoryStore is injected — the constructor defaults it to
+    None, so the write is opt-in at assembly; both the `run` CLI and research
+    mode inject one. ClassifyStage, by contrast, always instantiates a store
+    and reads it for recurring-failure counts.
+    """
     return global_dir() / "trajectories.jsonl"
 
 
