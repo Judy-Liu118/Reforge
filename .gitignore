@@ -49,3 +49,6 @@ first_run_failed.flag
 # rebuilds mp_warehouse.db every run). The generator + prereg doc are what should
 # be versioned, not this output.
 benchmark_data/mp_*
+
+# Comma-trap bench data (scripts/build_comma_trap_data.py) — deterministic, regenerable
+benchmark_data/comma_trap/
