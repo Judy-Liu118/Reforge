@@ -69,6 +69,11 @@ class MemoryRecord(BaseModel):
     retry_count: int = Field(default=0)
     tags: list[str] = Field(default_factory=list)
     problem_signature: dict = Field(default_factory=dict)
+    # De-specified strategy card distilled from the trajectory — keys
+    # title / description / content / polarity ("success" | "failure").
+    # Empty unless the distilled-memory experiment flag is on (see writer.py);
+    # recovery_action stays the production repair channel.
+    distilled_strategy: dict = Field(default_factory=dict)
 
     @classmethod
     def from_session(

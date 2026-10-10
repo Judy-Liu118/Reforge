@@ -7,6 +7,7 @@ interface instead of concrete storage classes. Swap backend (JSONL → SQLite
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Protocol, runtime_checkable
 
 from reforge.memory.models import MemoryRecord, MemoryType
@@ -71,3 +72,30 @@ class CompositeMemorySubstrate:
         of typed fingerprint fields, not by query-string keyword overlap.
         """
         return self._retriever.find_by_signature(signature, limit=limit)
+
+    def recall_distilled(self, user_request: str, limit: int = 1) -> list[MemoryRecord]:
+        """Experiment read path: records carrying a distilled strategy card,
+        ranked by request similarity — full scan, no index.
+
+        Both polarities are eligible: a failure card's prevention strategy is
+        the point of distilling failures at all, so the SUCCESS/RECOVERY
+        filter of recall_for_planning does not apply here.
+        """
+        cards = [r for r in self._store.list_all() if r.distilled_strategy]
+        query = _char_ngrams(user_request)
+        cards.sort(key=lambda r: _cosine(query, _char_ngrams(r.user_request)), reverse=True)
+        return cards[:limit]
+
+
+def _char_ngrams(text: str, n: int = 2) -> Counter:
+    # Character n-grams rather than whitespace tokens: the requests are
+    # Chinese with no word boundaries. Lexical stand-in for an embedding.
+    t = "".join(text.lower().split())
+    return Counter(t[i:i + n] for i in range(max(len(t) - n + 1, 0)))
+
+
+def _cosine(a: Counter, b: Counter) -> float:
+    dot = sum(v * b[k] for k, v in a.items())
+    na = sum(v * v for v in a.values()) ** 0.5
+    nb = sum(v * v for v in b.values()) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from reforge.memory.substrate import CompositeMemorySubstrate, MemorySubstrate
+from reforge.memory.writer import distilled_memory_enabled
 
 if TYPE_CHECKING:
     from reforge.runtime.infrastructure.trajectory.store import TrajectoryStore
@@ -30,8 +31,23 @@ class PlannerMemoryContext:
         """Return a formatted context string, or '' if nothing relevant found."""
         lines: list[str] = []
 
-        # Past successes and recoveries from MemoryStore
-        records = self._substrate.recall_for_planning(user_request, limit=3)
+        # Experiment (REFORGE_EXP_DISTILLED_MEMORY=1): inject the top-1
+        # distilled strategy card instead of the raw record lines. Planning-
+        # time is the only place memory can act on silent-wrong tasks — the
+        # reactive repair_hint path needs an exception to fire.
+        recall_distilled = getattr(self._substrate, "recall_distilled", None)
+        if distilled_memory_enabled() and recall_distilled is not None:
+            records = []
+            for r in recall_distilled(user_request, limit=1):
+                card = r.distilled_strategy
+                kind = "成功经验" if card.get("polarity") == "success" else "失败教训"
+                lines.append("--- Distilled strategy from past experience ---")
+                lines.append(f"[{kind}] {card.get('title', '')}")
+                lines.append(f"适用场景: {card.get('description', '')}")
+                lines.append(str(card.get("content", "")))
+        else:
+            # Past successes and recoveries from MemoryStore
+            records = self._substrate.recall_for_planning(user_request, limit=3)
         if records:
             lines.append("--- Past execution experience ---")
             for r in records:
