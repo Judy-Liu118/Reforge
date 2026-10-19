@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Protocol
 
 from reforge.online import card_gate, metrics
+from reforge.online.canary import Canary
 from reforge.online.card_bank import ACTIVE, EVICTED, QUARANTINED, Card, CardBank, provenance_hash
 from reforge.online.decision import TAU, Verdict, decide
 from reforge.online.loop_log import LoopEventLog
@@ -102,6 +103,7 @@ class LoopConfig:
     agent_token_stop: int = 0         # 0 = no stop
     keep_work: bool = False
     verbose: bool = False
+    canary_every: int = 20
 
 
 def audit_draw(seed: int, task_id: str, attempt: int) -> float:
@@ -122,7 +124,7 @@ class _Attempt:
 
 class OnlineLoop:
     def __init__(self, root: Path, *, agent: Agent, verifier: Verifier, distiller: Distiller,
-                 config: LoopConfig | None = None) -> None:
+                 config: LoopConfig | None = None, canary_pairs: list | None = None) -> None:
         self.root = Path(root)
         self.log = LoopEventLog(self.root / "loop_events.jsonl")
         self.bank = CardBank(self.log)
@@ -130,6 +132,20 @@ class OnlineLoop:
         self.metrics_path = self.root / "metrics.jsonl"
         self.agent, self.verifier, self.distiller = agent, verifier, distiller
         self.cfg = config or LoopConfig()
+        self.canary = Canary(self.root, canary_pairs, agent=agent, data_signals=verifier.data_signals,
+                             log=self.log, bank=self.bank, every=self.cfg.canary_every,
+                             recall_min_score=self.cfg.recall_min_score,
+                             recall_signal_bonus=self.cfg.recall_signal_bonus,
+                             verbose=self.cfg.verbose) if canary_pairs else None
+
+    def _spent(self) -> int:
+        return metrics.agent_tokens(self.log) + (self.canary.tokens() if self.canary else 0)
+
+    def _maybe_canary(self, *, exhausted: bool = False) -> None:
+        if self.canary is not None:
+            n = len(self.log.committed_tasks())
+            if self.canary.due(n, exhausted=exhausted):
+                self.canary.run_checkpoint(n)
 
     # -- driver ----------------------------------------------------------------
 
@@ -139,20 +155,24 @@ class OnlineLoop:
         self.log.append("LOOP_STARTED", resumed=bool(len(self.log)), committed=len(committed),
                         abandoned_tries=abandoned, verifier_sha=self.verifier.sha,
                         config={k: v for k, v in self.cfg.__dict__.items()})
-        done_now = 0
+        done_now, exhausted = 0, True
+        self._maybe_canary()                                         # t=0 baseline on a fresh run
         for spec, gold_ref in stream:
             if spec.id in committed:
                 self._shadow(spec, gold_ref, committed[spec.id])     # fills a row lost to a kill
                 continue
             if max_tasks and done_now >= max_tasks:
+                exhausted = False
                 break
-            if self.cfg.agent_token_stop and metrics.agent_tokens(self.log) >= self.cfg.agent_token_stop:
-                print(f"TOKEN STOP: agent tokens >= {self.cfg.agent_token_stop}", flush=True)
+            if self.cfg.agent_token_stop and self._spent() >= self.cfg.agent_token_stop:
+                print(f"TOKEN STOP: agent tokens (loop + canary) >= {self.cfg.agent_token_stop}", flush=True)
+                exhausted = False
                 break
             try:
                 try_id = self.run_task(spec)
             except HarnessError as e:
                 print(f"  !! {spec.id}: harness error, left uncommitted for resume: {e}", flush=True)
+                exhausted = False
                 continue
             self._shadow(spec, gold_ref, try_id)
             done_now += 1
@@ -160,6 +180,9 @@ class OnlineLoop:
             with open(self.metrics_path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"task_id": spec.id, "ts": datetime.now(timezone.utc).isoformat(), **row},
                                     ensure_ascii=False) + "\n")
+            self._maybe_canary()
+        if exhausted:
+            self._maybe_canary(exhausted=True)                        # closing checkpoint
         summary = metrics.summarize(self.log, self.bank)
         self.log.append("METRICS", **summary)
         (self.root / "summary.md").write_text(metrics.markdown(summary), encoding="utf-8")

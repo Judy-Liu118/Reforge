@@ -325,3 +325,60 @@ def test_verifier_sees_pristine_inputs(tmp_path):
     loop = _loop(tmp_path, agent=Messy(), verifier=Watching(), audit_rates={})
     loop.run(_stream(["infiagent:q1"]))
     assert seen == [[]]
+
+
+# ---------------------------------------------------------------------------
+# Canary
+# ---------------------------------------------------------------------------
+
+SCEN.update({
+    "trap:can1": {"cold": 1.0, "warm": 2.0, "verdict": "cheap"},       # a card makes it right
+    "infiagent:can2": {"cold": 5.0, "warm": 5.0, "verdict": "cheap"},  # right either way
+})
+GOLDS.update({"trap:can1": 2.0, "infiagent:can2": 5.0})
+
+
+def test_wilson_and_newcombe():
+    from reforge.online.canary import newcombe_paired, wilson
+
+    assert wilson(0, 10) == (0.0, 0.2775) and wilson(5, 10) == (0.2366, 0.7634) and wilson(0, 0) is None
+    d, (lo, hi) = newcombe_paired(5, 0, 0, 5)                   # identical arms
+    assert d == 0.0 and lo < 0 < hi
+    d, (lo, hi) = newcombe_paired(3, 6, 0, 3)                   # on wins 6 discordant pairs of 12
+    assert d == 0.5 and 0 < lo < d < hi <= 1
+    d2, (lo2, hi2) = newcombe_paired(3, 0, 6, 3)
+    assert d2 == -0.5 and (lo2, hi2) == (-hi, -lo)              # mirror image
+
+
+def test_canary_checkpoints_and_isolation(tmp_path):
+    canary = _stream(["trap:can1", "infiagent:can2"])
+    loop = OnlineLoop(tmp_path / "run", agent=FakeAgent(), verifier=FakeVerifier(), distiller=PerTaskDistiller(),
+                      config=LoopConfig(canary_every=2), canary_pairs=canary)
+    loop.run(_stream(["trap:crit1", "trap:crit2", "csv:c1"]))
+    res = {e.payload["checkpoint"]: e.payload for e in loop.log.events("CANARY_RESULT")}
+    assert sorted(res) == [0, 2, 3]                            # t=0, every 2, closing
+    assert res[0]["bank_active"] == 0 and res[0]["n_on_with_cards"] == 0 and res[0]["lift"] == 0.0
+    # after crit1 the bank holds an active card; can1 recalls it (signal match) and is fixed by it
+    assert res[2]["bank_active"] >= 1 and res[2]["n_on_with_cards"] == 2
+    assert (res[2]["off_pass"], res[2]["on_pass"], res[2]["on_only"]) == (1, 2, 1) and res[2]["lift"] == 0.5
+    rows = loop.canary.rows()
+    assert {r["arm"] for r in rows if r["checkpoint"] == 0 and r["on_reused_off"]} == {"on"}
+    # canary never touched control state
+    stream_attempts = len(loop.log.events("VERDICT"))
+    assert len(loop.log.events("CARD_RECALLED")) == stream_attempts
+    assert all(not t.startswith(("trap:can", "infiagent:can")) for t in loop.log.committed_tasks())
+
+
+def test_canary_resume_mid_checkpoint(tmp_path):
+    canary = _stream(["trap:can1", "infiagent:can2"])
+    agent = FakeAgent(explode_on=lambda task, cards, n: task.id == "infiagent:can2")
+    loop = OnlineLoop(tmp_path / "run", agent=agent, verifier=FakeVerifier(), distiller=FakeDistiller(),
+                      canary_pairs=canary)
+    with pytest.raises(KeyboardInterrupt):
+        loop.run(_stream(["csv:c1"]))
+    assert loop.log.events("CANARY_RESULT") == [] and len(loop.canary.rows()) == 2     # can1 off + reused on
+    loop2 = OnlineLoop(tmp_path / "run", agent=FakeAgent(), verifier=FakeVerifier(), distiller=FakeDistiller(),
+                       canary_pairs=canary)
+    loop2.run(_stream(["csv:c1"]))
+    assert [c[0] for c in loop2.agent.calls][0] == "infiagent:can2"                    # can1 not rerun
+    assert loop2.log.events("CANARY_RESULT")[0].payload["n_pairs"] == 2

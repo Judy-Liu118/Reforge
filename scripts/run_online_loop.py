@@ -52,6 +52,8 @@ def main() -> None:
     ap.add_argument("--agent-token-stop", type=int, default=700_000)
     ap.add_argument("--recall-min-score", type=float, default=0.3)
     ap.add_argument("--no-retry", action="store_true")
+    ap.add_argument("--canary-every", type=int, default=20, help="committed tasks between canary checkpoints")
+    ap.add_argument("--no-canary", action="store_true")
     ap.add_argument("--keep-work", action="store_true")
     args = ap.parse_args()
 
@@ -78,7 +80,7 @@ def main() -> None:
     verifier = LadderVerifier(args.critic_model, root, budget=args.critic_budget, k=args.critic_k)
     cfg = LoopConfig(audit_rates=_kv(args.audit), audit_seed=args.seed, recall_min_score=args.recall_min_score,
                      retry_on_confident_fail=not args.no_retry, agent_token_stop=args.agent_token_stop,
-                     keep_work=args.keep_work, verbose=True)
+                     keep_work=args.keep_work, verbose=True, canary_every=args.canary_every)
     cfg_path = root / "run_config.json"
     if not cfg_path.exists():
         cfg_path.write_text(json.dumps({**vars(args), "verifier_sha": verifier.sha,
@@ -89,13 +91,15 @@ def main() -> None:
           f"stream={len(stream)} ({ {k: len(v) for k, v in sources.items()} }) canary={len(canary)} "
           f"holdout_tables={sorted(holdout)}\n→ {root}", flush=True)
 
-    loop = OnlineLoop(root, agent=RuntimeAgent(), verifier=verifier, distiller=RuntimeDistiller(), config=cfg)
+    loop = OnlineLoop(root, agent=RuntimeAgent(), verifier=verifier, distiller=RuntimeDistiller(), config=cfg,
+                      canary_pairs=None if args.no_canary else canary)
     try:
         s = loop.run(stream, max_tasks=args.max_tasks)
     except CriticUnavailable as e:
         sys.exit(f"PAUSED: critic unavailable ({e}); rerun to resume once budget allows")
     print(json.dumps(s, ensure_ascii=False, indent=1))
     print(f"critic tokens (cumulative, cache incl.)={verifier.spent}")
+    print(f"→ report: python scripts/report_online_loop.py --name {args.name}")
 
 
 if __name__ == "__main__":
