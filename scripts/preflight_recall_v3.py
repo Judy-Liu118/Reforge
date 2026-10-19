@@ -149,10 +149,25 @@ def main() -> None:
         rows_n.append(r)
         if r["reachable"] and len(chosen) < N_NATURAL:
             chosen.append(c.id)
-    pre = {"theta": theta, "model": emb.model_id, "trap_canary": rows_t, "natural_candidates": rows_n,
-           "natural_canary_chosen": chosen,
-           "all_trap_canary_reachable": all(r["reachable"] for r in rows_t),
-           "natural_filled": len(chosen) == N_NATURAL}
+    # Re-check against the FINAL stream (v1 stream + the candidates not chosen); drop and refill until stable.
+    while True:
+        final = stream_specs + [x for x in cand if x.id not in chosen]
+        rows_c = reach(traps + [x for x in cand if x.id in chosen], final, emb, theta)
+        lost = [r["canary"] for r in rows_c if not r["reachable"] and not r["canary"].startswith("trap:")]
+        if not lost:
+            break
+        chosen = [c for c in chosen if c not in lost]
+        nxt = [x.id for x in cand if x.id not in chosen and x.id not in lost
+               and reach([x], stream_specs + [y for y in cand if y.id not in chosen and y.id != x.id], emb,
+                         theta)[0]["reachable"]]
+        if not nxt:
+            break
+        chosen.append(nxt[0])
+    pre = {"theta": theta, "model": emb.model_id, "natural_candidates_first_pass": rows_n,
+           "natural_canary_chosen": chosen, "final_check": rows_c,
+           "all_trap_canary_reachable": all(r["reachable"] for r in rows_c if r["canary"].startswith("trap:")),
+           "natural_filled": len(chosen) == N_NATURAL
+                             and all(r["reachable"] for r in rows_c if not r["canary"].startswith("trap:"))}
     (out_dir / "calibration.json").write_text(json.dumps(cal, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "preflight.json").write_text(json.dumps(pre, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps({k: v for k, v in cal.items() if k != "top1_rows"}, ensure_ascii=False, indent=1))
