@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 
+from reforge.online import review
 from reforge.online.card_bank import ACTIVE, EVICTED, QUARANTINED, CardBank
 from reforge.online.loop_log import LoopEventLog
 
@@ -51,7 +52,8 @@ def summarize(log: LoopEventLog, bank: CardBank) -> dict:
         "critic_uncertain_reasons": dict(Counter(e.payload["reason"] for e in critic
                                                  if e.payload["label"] == "uncertain")),
         "audits": sum(bool(e.payload.get("audited")) for e in verdicts),
-        "review_queue": len(log.events("REVIEW_ENQUEUED")),
+        "review_enqueued": len(log.events("REVIEW_ENQUEUED")),
+        "review_open": len(review.pending(log)),
         "review_reasons": dict(Counter(e.payload.get("reason") for e in log.events("REVIEW_ENQUEUED"))),
         "cards_admitted_active": admitted.get(ACTIVE, 0),
         "cards_admitted_quarantined": admitted.get(QUARANTINED, 0),
