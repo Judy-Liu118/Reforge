@@ -179,3 +179,45 @@ def canary_and_stream_sources(infiagent_dir: Path, *, csv_dir: Path | None = Non
     if bird_dir:
         sources["bird"] = bird_tasks(Path(bird_dir), limit=bird_limit)
     return canary_trap + canary_nat, sources, holdout
+
+
+# ---------------------------------------------------------------------------
+# Pre-registration v3: same-family canary (disjoint by task), offline dev set
+# ---------------------------------------------------------------------------
+
+# Natural canary candidates on stream tables, in preference order; the first 4 that pass
+# the semantic reachability preflight are used (scripts/preflight_recall_v3.py).
+NATURAL_CANARY_V3_CANDIDATES = ("infiagent:da0024", "infiagent:da0055", "infiagent:da0739", "infiagent:da0732",
+                                "infiagent:da0026", "infiagent:da0057", "infiagent:da0740", "infiagent:da0030")
+
+
+def v3_sources(infiagent_dir: Path, natural_canary: tuple[str, ...]) -> tuple[list, dict, list]:
+    """(canary pairs, {source: stream pairs}, dev specs).
+
+    Stream = the v1 stream (no task on the 7 v1 holdout tables) minus the natural
+    canary tasks. Canary = learning_loop_cases.CANARY_V3 (trap cases on stream
+    tables, every question different from the stream's) + `natural_canary`.
+    Dev = everything on the 7 v1 holdout tables (DEV_V3 traps + InfiAgent
+    questions there) — touched only by the offline threshold calibration.
+    """
+    from learning_loop_cases import CANARY_V3, DEV_V3
+
+    _, v1_sources, holdout = canary_and_stream_sources(infiagent_dir)
+    natural = {p[0].id: p for p in v1_sources["infiagent"]}
+    canary = trap_tasks(CANARY_V3) + [natural[t] for t in natural_canary]
+    stream = {"trap": v1_sources["trap"], "infiagent": [p for p in v1_sources["infiagent"] if p[0].id not in natural_canary]}
+    dev_traps = [s for s, _ in trap_tasks(c for c in DEV_V3 if c.validate()["admitted"])]
+    dev_nat = [s for s, _ in infiagent_tasks(Path(infiagent_dir)) if s.tables[0] in holdout]
+    check_v3_split(canary, stream, dev_traps + dev_nat)
+    return canary, stream, dev_traps + dev_nat
+
+
+def check_v3_split(canary: list, stream: dict, dev: list) -> None:
+    """Leak guards, asserted on every v3 start: canary ∩ stream = ∅ by task id and by
+    question text; dev shares no table with stream or canary."""
+    s_specs = [s for ps in stream.values() for s, _ in ps]
+    c_specs = [s for s, _ in canary]
+    assert not {s.id for s in c_specs} & {s.id for s in s_specs}, "canary task in stream"
+    assert not {s.request for s in c_specs} & {s.request for s in s_specs}, "canary question duplicates a stream one"
+    used = {t for s in s_specs + c_specs for t in s.tables}
+    assert not used & {t for s in dev for t in s.tables}, "dev table used by stream/canary"

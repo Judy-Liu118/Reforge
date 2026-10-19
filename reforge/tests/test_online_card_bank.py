@@ -160,3 +160,22 @@ def test_recall_v2_signal_free_card_by_slots(tmp_path):
     assert bank.get("crit").slots == src                                                     # survives replay
     with pytest.raises(ValueError):
         bank.recall(req, rule="nope")
+
+
+def test_recall_v3_semantic_threshold_and_top1(tmp_path):
+    log = LoopEventLog(tmp_path / "e.jsonl")
+    bank = CardBank(log)
+    vecs = {"q_footer": [1.0, 0.0], "q_dups": [0.8, 0.6], "task": [0.96, 0.28], "far": [0.0, 1.0]}
+    bank.admit(replace(_card("a", request="q_footer"), signals=()), task_id="t1", try_id="A")
+    bank.admit(replace(_card("b", request="q_dups"), signals=()), task_id="t2", try_id="B")
+    log.append("TASK_COMMITTED", task_id="t1", try_id="A")
+    log.append("TASK_COMMITTED", task_id="t2", try_id="B")
+    kw = {"rule": "semantic", "embed": vecs.__getitem__}
+    hits = bank.recall("task", semantic_threshold=0.9, **kw)
+    assert [c.card_id for c, _ in hits] == ["a"] and hits[0][1] == 0.96          # top-1 only
+    assert bank.recall("far", semantic_threshold=0.9, **kw) == []                 # below θ: no card, on = off
+    assert len(bank.recall("task", semantic_threshold=0.9, limit=5, **kw)) == 2
+    with pytest.raises(ValueError):
+        bank.recall("task", rule="semantic")                                      # θ must be given
+    # optional slot filter on top
+    assert bank.recall("task", semantic_threshold=0.9, slot_filter=True, slots={"op": "sum"}, **kw) == []

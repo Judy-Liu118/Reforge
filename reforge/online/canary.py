@@ -34,7 +34,7 @@ from pathlib import Path
 
 from reforge.online.card_bank import ACTIVE, CardBank
 from reforge.online.loop_log import LoopEventLog
-from reforge.online.shadow import score
+from reforge.online.shadow import card_contains_answer, score
 from reforge.online.slots import task_slots
 
 Z = 1.959964
@@ -101,16 +101,13 @@ def ci_agree(ci1, ci2, tol: float = AGREE_TOL) -> bool | None:
 
 class Canary:
     def __init__(self, root: Path, pairs: list, *, agent, data_signals, log: LoopEventLog, bank: CardBank,
-                 every: int = 20, recall_min_score: float = 0.3, recall_signal_bonus: float = 0.3,
-                 recall_rule: str = "sim_plus_bonus",
-                 verbose: bool = False) -> None:
+                 every: int = 20, recall_kw: dict | None = None, verbose: bool = False) -> None:
         self.root = Path(root)
         self.pairs = list(pairs)
         self.agent, self.data_signals = agent, data_signals
         self.log, self.bank = log, bank
         self.every = every
-        self.recall_kw = {"min_score": recall_min_score, "signal_bonus": recall_signal_bonus,
-                          "rule": recall_rule}
+        self.recall_kw = dict(recall_kw or {})
         self.verbose = verbose
         self.rows_path = self.root / "canary.jsonl"
 
@@ -175,6 +172,8 @@ class Canary:
                "correct": s.get("correct"), "answer": s.get("answer"), "printed": traj.printed,
                "tokens": traj.tokens_prompt + traj.tokens_completion, "error": traj.error,
                "on_reused_off": False}
+        if hits:
+            row["card_has_canary_gold"] = card_contains_answer(gold_ref, [c.body for c, _ in hits])
         self._write(row)
         return row
 

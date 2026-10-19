@@ -100,7 +100,9 @@ class LoopConfig:
     audit_seed: int = 0
     recall_min_score: float = 0.3
     recall_signal_bonus: float = 0.3
-    recall_rule: str = "signal_or_slot"        # pre-registration v2, see CardBank.recall
+    recall_rule: str = "signal_or_slot"        # see CardBank.recall; v3 runs "semantic"
+    semantic_threshold: float | None = None    # v3: frozen offline on the dev set
+    slot_filter: bool = False                  # v3: optional structured filter on top of semantic
     retry_on_confident_fail: bool = True
     agent_token_stop: int = 0         # 0 = no stop
     keep_work: bool = False
@@ -127,7 +129,7 @@ class _Attempt:
 
 class OnlineLoop:
     def __init__(self, root: Path, *, agent: Agent, verifier: Verifier, distiller: Distiller,
-                 config: LoopConfig | None = None, canary_pairs: list | None = None) -> None:
+                 config: LoopConfig | None = None, canary_pairs: list | None = None, embed=None) -> None:
         self.root = Path(root)
         self.log = LoopEventLog(self.root / "loop_events.jsonl")
         self.bank = CardBank(self.log)
@@ -135,12 +137,13 @@ class OnlineLoop:
         self.metrics_path = self.root / "metrics.jsonl"
         self.agent, self.verifier, self.distiller = agent, verifier, distiller
         self.cfg = config or LoopConfig()
+        # one recall configuration for stream and canary alike
+        self.recall_kw = dict(rule=self.cfg.recall_rule, min_score=self.cfg.recall_min_score,
+                              signal_bonus=self.cfg.recall_signal_bonus, embed=embed,
+                              semantic_threshold=self.cfg.semantic_threshold, slot_filter=self.cfg.slot_filter)
         self.canary = Canary(self.root, canary_pairs, agent=agent, data_signals=verifier.data_signals,
                              log=self.log, bank=self.bank, every=self.cfg.canary_every,
-                             recall_min_score=self.cfg.recall_min_score,
-                             recall_signal_bonus=self.cfg.recall_signal_bonus,
-                             recall_rule=self.cfg.recall_rule,
-                             verbose=self.cfg.verbose) if canary_pairs else None
+                             recall_kw=self.recall_kw, verbose=self.cfg.verbose) if canary_pairs else None
 
     def _spent(self) -> int:
         return metrics.agent_tokens(self.log) + (self.canary.tokens() if self.canary else 0)
@@ -236,8 +239,7 @@ class OnlineLoop:
         signals = self.verifier.data_signals(pristine)
         slots = task_slots(spec.request, spec.tables, pristine)
         hits = [(override, 1.0)] if override is not None else self.bank.recall(
-            spec.request, signals, slots=slots, rule=self.cfg.recall_rule, min_score=self.cfg.recall_min_score,
-            signal_bonus=self.cfg.recall_signal_bonus, pending_try=try_id)
+            spec.request, signals, slots=slots, pending_try=try_id, **self.recall_kw)
         traj = self.agent.run(spec, data_dir, work / f"a{n}" / "run", [c.to_memory_record() for c, _ in hits])
         self.log.append("ATTEMPT_FINISHED", **T, attempt=n, run_id=run_id, **traj.summary())
         if traj.error:

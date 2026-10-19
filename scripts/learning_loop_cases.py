@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 import random
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -54,14 +54,15 @@ class LoopCase:
     careful: Callable[[Frames], float]
     tolerance: float = 0.011                          # answers are asked to 2 decimals
     gold: float = 0.0
+    tag: str = ""                                     # tells apart cases of one trap on one table
 
     @property
     def id(self) -> str:
-        return f"{self.trap}__{Path(self.table).stem.replace(' ', '_')[:14]}"
+        return f"{self.trap}__{Path(self.table).stem.replace(' ', '_')[:14]}" + (f"__{self.tag}" if self.tag else "")
 
     @property
     def dirty_dir(self) -> Path:
-        return DST / self.trap / Path(self.table).stem
+        return DST / self.trap / (Path(self.table).stem + (f"__{self.tag}" if self.tag else ""))
 
     def materialise(self) -> Path:
         frames, gold = self.make(pd.read_csv(SRC / self.table), _rng(self.id))
@@ -267,6 +268,47 @@ TRAPS: dict[str, list[LoopCase]] = {
     "join_fanout": [_join("join_fanout", *_GAP), _join("join_fanout", *_MAL)],
     "join_loss": [_join("join_loss", *_GAP), _join("join_loss", *_MAL)],
 }
+
+
+
+def _tag(tag: str, *cases: LoopCase) -> list[LoopCase]:
+    return [replace(c, tag=tag) for c in cases]
+
+
+_TIT = ("titanic.csv", "Name", "Sex", "female", "Fare", "titanic_sex.csv")
+
+# Pre-registration v3 canary: same table family as the stream, disjoint by task —
+# every (trap, table, column) differs from the stream's TRAPS entries on that table.
+CANARY_V3: list[LoopCase] = _tag(
+    "c3",
+    _footer("Credit.csv", "Income", "Gender"),
+    _footer("insurance.csv", "bmi", "region"),
+    _dups("Credit.csv", "Rating", "Unnamed: 0"),
+    _sentinel("Credit.csv", "Income"),
+    _key_variants("insurance.csv", "smoker", "yes", "charges"),
+    _synonyms("insurance.csv", "region", "southwest", ("SW", "south-west"), "charges"),
+    _groupby_nan("Credit.csv", "Student", "Income"),
+    _join("join_key", "gapminder_cleaned.csv", "country", "continent", "europe", "pop", "country_continent.csv"),
+)
+
+# Offline dev set for the v3 recall threshold: only the tables held out from both stream
+# and canary (titanic / auto-mpg / hotel_data). Root-cause label = trap kind.
+DEV_V3: list[LoopCase] = [c for cs in TRAPS.values() for c in cs
+                          if c.table in ("titanic.csv", "auto-mpg.csv", "hotel_data.csv")] + _tag(
+    "dev",
+    _footer("titanic.csv", "Fare", "Name"),
+    _footer("auto-mpg.csv", "weight", "origin"),
+    _dups("titanic.csv", "Age", "PassengerId"),
+    _dups("hotel_data.csv", "star_rating", "hotel_id"),
+    _sentinel("auto-mpg.csv", "weight"),
+    _sentinel("titanic.csv", "Age"),
+    _key_variants("titanic.csv", "Sex", "male", "Fare"),
+    _key_variants("hotel_data.csv", "city_name", "Chicago", "review_count"),
+    _synonyms("titanic.csv", "Sex", "female", ("F", "woman"), "Fare"),
+    _groupby_nan("titanic.csv", "Sex", "Fare"),
+    _groupby_nan("auto-mpg.csv", "origin", "weight"),
+    _join("join_key", *_TIT), _join("join_fanout", *_TIT), _join("join_loss", *_TIT),
+)
 
 
 if __name__ == "__main__":

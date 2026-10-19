@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, replace
 
 from reforge.memory.substrate import _char_ngrams, _cosine
 from reforge.online.loop_log import LoopEventLog
+from reforge.online.embed import cosine as _vec_cosine
 from reforge.online.slots import slot_match
 
 ACTIVE, QUARANTINED, EVICTED = "active", "quarantined", "evicted"
@@ -102,10 +103,11 @@ class CardBank:
         """Hash of the active set — stamps canary results."""
         return provenance_hash(*sorted(c.card_id for c in self.by_status(ACTIVE)))
 
-    RULES = ("sim_plus_bonus", "overlap_and_sim", "signal_or_slot")
+    RULES = ("sim_plus_bonus", "overlap_and_sim", "signal_or_slot", "semantic")
 
     def recall(self, request: str, signals: list[str] | tuple[str, ...] = (), *, slots: dict | None = None,
                rule: str = "sim_plus_bonus", limit: int = 1, min_score: float = 0.3, signal_bonus: float = 0.3,
+               embed=None, semantic_threshold: float | None = None, slot_filter: bool = False,
                pending_try: str | None = None) -> list[tuple[Card, float]]:
         """Active cards only.
 
@@ -120,9 +122,29 @@ class CardBank:
                          target column OR same table family), never by raw
                          character similarity. Score = cosine either way, for
                          ranking only.
+        semantic         pre-registration v3 (ReasoningBank-style): `embed`
+                         (local sentence encoder) of the task request vs of
+                         the card's source request; top-`limit` by cosine,
+                         kept only if >= `semantic_threshold` (frozen offline
+                         on a dev set) — below it nothing is handed over, so
+                         on = off. `slot_filter` additionally requires
+                         slot_match (optional, off in v3).
         """
         if rule not in self.RULES:
             raise ValueError(f"unknown recall rule {rule!r}")
+        if rule == "semantic":
+            if embed is None or semantic_threshold is None:
+                raise ValueError("semantic recall needs embed and semantic_threshold")
+            qv = embed(request)
+            scored = []
+            for c in self.by_status(ACTIVE, pending_try=pending_try):
+                if slot_filter and not slot_match(c.slots, slots):
+                    continue
+                s = _vec_cosine(qv, embed(c.source_request))
+                if s >= semantic_threshold:
+                    scored.append((c, round(s, 4)))
+            scored.sort(key=lambda x: (-x[1], x[0].card_id))
+            return scored[:limit]
         q = _char_ngrams(request)
         sig = set(signals)
         scored = []

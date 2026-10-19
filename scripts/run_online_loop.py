@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -48,20 +49,24 @@ def main() -> None:
     ap.add_argument("--bird-limit", type=int, default=3)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-tasks", type=int, default=0, help="per invocation; 0 = whole stream")
-    ap.add_argument("--agent-model", default="qwen3.8-2.4t-a95b")
-    ap.add_argument("--critic-model", default="qwen3.8-max-0902")
+    ap.add_argument("--agent-model", default="qwen3.8-max")
+    ap.add_argument("--critic-model", default="qwen3.7-flash", help="v3: a different model from the agent")
     ap.add_argument("--critic-k", type=int, default=1, help="1 = self-reported confidence; 3 = consistency")
     ap.add_argument("--thinking-budget", type=int, default=4000, help="agent-only; 0 = uncapped")
     ap.add_argument("--critic-budget", type=int, default=900_000)
-    ap.add_argument("--agent-token-stop", type=int, default=700_000)
+    ap.add_argument("--agent-token-stop", type=int, default=950_000)
     ap.add_argument("--recall-min-score", type=float, default=0.3)
-    ap.add_argument("--recall-rule", choices=("signal_or_slot", "overlap_and_sim", "sim_plus_bonus"),
-                    default="signal_or_slot", help="see CardBank.recall; signal_or_slot = pre-registration v2")
+    ap.add_argument("--recall-rule", choices=("semantic", "signal_or_slot", "overlap_and_sim", "sim_plus_bonus"),
+                    default="semantic", help="see CardBank.recall; semantic = pre-registration v3")
+    ap.add_argument("--split", choices=("v3", "v1"), default="v3",
+                    help="v3: same-family canary + frozen threshold from runs/online/v3_prep (preflight_recall_v3.py)")
+    ap.add_argument("--embed-model-dir", default="D:/models/bge-m3")
+    ap.add_argument("--slot-filter", action="store_true", help="v3 option: also require slot_match")
     ap.add_argument("--supersedes", default="", help="run name whose pre-registration this one replaces")
     ap.add_argument("--change-reason", default="", help="why the superseded pre-registration was replaced")
     ap.add_argument("--tasks", default="", help="comma list: keep only these stream task ids, in this order (smoke)")
     ap.add_argument("--no-retry", action="store_true")
-    ap.add_argument("--canary-every", type=int, default=20, help="committed tasks between canary checkpoints")
+    ap.add_argument("--canary-every", type=int, default=40, help="committed tasks between canary checkpoints")
     ap.add_argument("--no-canary", action="store_true")
     ap.add_argument("--keep-work", action="store_true")
     args = ap.parse_args()
@@ -79,9 +84,36 @@ def main() -> None:
     root = _ROOT / "runs" / "online" / args.name
     root.mkdir(parents=True, exist_ok=True)
     want = [s.strip() for s in args.sources.split(",") if s.strip()]
-    canary, sources, holdout = canary_and_stream_sources(
-        _ROOT / args.infiagent_dir, csv_dir=(_ROOT / args.csv_dir) if args.csv_dir else None,
-        bird_dir=(_ROOT / args.bird_dir) if "bird" in want else None, bird_limit=args.bird_limit)
+    prep = _ROOT / "runs" / "online" / "v3_prep"
+    theta, prep_hashes, embed = None, {}, None
+    if args.split == "v3":
+        import hashlib
+
+        from online_adapters import v3_sources
+
+        from reforge.online.embed import Encoder
+        cal_p, pre_p = prep / "calibration.json", prep / "preflight.json"
+        if not (cal_p.exists() and pre_p.exists()):
+            sys.exit("v3 needs runs/online/v3_prep/{calibration,preflight}.json — run scripts/preflight_recall_v3.py")
+        cal, pre = json.loads(cal_p.read_text(encoding="utf-8")), json.loads(pre_p.read_text(encoding="utf-8"))
+        if not (pre["all_trap_canary_reachable"] and pre["natural_filled"]):
+            sys.exit("v3 preflight failed: some canary task is unreachable — replace it first")
+        theta = cal["theta"]
+        prep_hashes = {f: hashlib.sha256((prep / f).read_bytes()).hexdigest()[:16] for f in ("calibration.json",
+                                                                                            "preflight.json")}
+        canary, sources, dev = v3_sources(_ROOT / args.infiagent_dir, tuple(pre["natural_canary_chosen"]))
+        holdout = {t for s in dev for t in s.tables}
+        # start from the calibration's vectors: same text → bit-identical vector as calibrated
+        if not (root / "embed_cache.jsonl").exists() and (prep / "embed_cache.jsonl").exists():
+            import shutil
+            shutil.copy(prep / "embed_cache.jsonl", root / "embed_cache.jsonl")
+        embed = Encoder(args.embed_model_dir, cache_path=root / "embed_cache.jsonl")
+        if embed.model_id != pre["model"]:
+            sys.exit(f"embedding model {embed.model_id} differs from the one calibrated ({pre['model']})")
+    else:
+        canary, sources, holdout = canary_and_stream_sources(
+            _ROOT / args.infiagent_dir, csv_dir=(_ROOT / args.csv_dir) if args.csv_dir else None,
+            bird_dir=(_ROOT / args.bird_dir) if "bird" in want else None, bird_limit=args.bird_limit)
     sources = {k: v for k, v in sources.items() if k in want}
     stream = list(mix(sources, _kv(args.weights), seed=args.seed))
     if args.tasks:
@@ -92,7 +124,7 @@ def main() -> None:
 
     verifier = LadderVerifier(args.critic_model, root, budget=args.critic_budget, k=args.critic_k)
     cfg = LoopConfig(audit_rates=_kv(args.audit), audit_seed=args.seed, recall_min_score=args.recall_min_score,
-                     recall_rule=args.recall_rule,
+                     recall_rule=args.recall_rule, semantic_threshold=theta, slot_filter=args.slot_filter,
                      retry_on_confident_fail=not args.no_retry, agent_token_stop=args.agent_token_stop,
                      keep_work=args.keep_work, verbose=True, canary_every=args.canary_every)
     history = []
@@ -111,10 +143,18 @@ def main() -> None:
                               "signals: same parsed op AND (overlapping target column OR same table family); "
                               "raw character similarity never used alone",
             "overlap_and_sim": "signal overlap AND request cosine >= min score",
-            "sim_plus_bonus": "request cosine + signal bonus >= min score"}[args.recall_rule],
+            "sim_plus_bonus": "request cosine + signal bonus >= min score",
+            "semantic": "bge-m3 cosine(task request, card source request), top-1, kept only if >= the "
+                        "semantic_threshold frozen offline on the dev set (below it: no card, on = off)"
+                        + ("; plus slot_match" if args.slot_filter else "")}[args.recall_rule],
         "recall_known_blind_spot": "a card is never recalled cross-task when it neither shares a signal nor a "
                                    "slot (op + column/table family) with the task; it can still drive its own "
                                    "source task's retry or be promoted by hand",
+        "split": args.split, "semantic_threshold": theta, "slot_filter": args.slot_filter,
+        "v3_prep_sha": prep_hashes,
+        "models": {"agent": args.agent_model, "agent_thinking_budget": args.thinking_budget,
+                   "critic": args.critic_model, "distiller": os.environ.get("REFORGE_DISTILL_MODEL"),
+                   "embedding": embed.model_id if embed else None},
         "audit_rates": cfg.audit_rates, "audit_seed": args.seed, "critic_k": args.critic_k,
         "minting": "active only from critic-confirmed fail (conf>=tau) or manual promote; cheap-tier-only "
                    "fail -> quarantined, injected only into its own source task's retry",
@@ -142,7 +182,7 @@ def main() -> None:
           f"holdout_tables={sorted(holdout)}\n→ {root}", flush=True)
 
     loop = OnlineLoop(root, agent=RuntimeAgent(), verifier=verifier, distiller=RuntimeDistiller(), config=cfg,
-                      canary_pairs=None if args.no_canary else canary)
+                      canary_pairs=None if args.no_canary else canary, embed=embed)
     try:
         s = loop.run(stream, max_tasks=args.max_tasks)
     except CriticUnavailable as e:

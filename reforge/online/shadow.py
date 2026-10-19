@@ -29,6 +29,7 @@ Per attempt row:
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +42,25 @@ def score(gold_ref: GoldRef, stdout: str) -> dict:
         return dict(gold_ref._score(stdout))
     except Exception as e:  # noqa: BLE001 — measurement must not take the loop down
         return {"correct": None, "answer": None, "gold": None, "score_error": f"{type(e).__name__}: {e}"}
+
+
+_NUM = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def card_contains_answer(gold_ref: GoldRef | None, bodies: list[dict]) -> bool | None:
+    """Leak guard for the canary: does a card handed to a canary task spell out its answer?
+
+    Measurement only (canary rows). Golds with |gold| < 10 are skipped — small
+    integers appear in any card's steps — and so is anything not a single number.
+    """
+    if gold_ref is None:
+        return None
+    gold = score(gold_ref, "").get("gold")
+    if not isinstance(gold, (int, float)) or abs(gold) < 10:
+        return None
+    text = json.dumps(bodies, ensure_ascii=False)
+    tol = max(0.011, 1e-6 * abs(gold))
+    return any(abs(float(m) - gold) <= tol for m in _NUM.findall(text))
 
 
 def _agrees(claim: str | None, answer_correct: bool | None) -> bool | None:

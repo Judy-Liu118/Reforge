@@ -434,3 +434,25 @@ def test_v2_signal_free_critic_card_recalled_by_slot_only(tmp_path):
     legacy = _loop(tmp_path / "legacy", recall_rule="sim_plus_bonus")
     legacy.run(_stream(["trap:aud1", "trap:aud3"]))
     assert [c for t, c in legacy.agent.calls if t == "trap:aud3"][0]   # the old rule would have handed it over
+
+
+def test_card_contains_answer_guard():
+    from reforge.online.shadow import card_contains_answer
+
+    body = [{"title": "t", "content": "- 结果应为 18087.55,先剔除合计行"}]
+    assert card_contains_answer(_gold(18087.55), body) is True
+    assert card_contains_answer(_gold(999.0), body) is False
+    assert card_contains_answer(_gold(3.0), body) is None          # small golds are not checked
+    assert card_contains_answer(None, body) is None
+
+
+def test_canary_gold_never_steers_the_stream(tmp_path):
+    """Same stream, canary golds swapped for different values: every control event is identical."""
+    def trace(root, canary_gold):
+        canary = [(_spec(t), _gold(canary_gold)) for t in ("trap:can1", "infiagent:can2")]
+        loop = OnlineLoop(root, agent=FakeAgent(), verifier=FakeVerifier(), distiller=PerTaskDistiller(),
+                          config=LoopConfig(canary_every=2), canary_pairs=canary)
+        loop.run(_stream(["trap:crit1", "trap:crit2", "csv:c1"]))
+        return [(e.kind, e.task_id, e.payload.get("label"), e.payload.get("attempt"), len(e.payload.get("card_ids", [])))
+                for e in loop.log.events() if e.kind in ("VERDICT", "CARD_RECALLED", "TASK_COMMITTED", "CARD_ADMITTED")]
+    assert trace(tmp_path / "a", 2.0) == trace(tmp_path / "b", -77.0)
