@@ -116,3 +116,22 @@ def test_memory_record_shape():
 
     r = MemoryRecord.model_validate(_card("c1").to_memory_record())
     assert r.memory_id == "c1" and r.distilled_strategy["content"] == "- 检查汇总行"
+
+
+def test_recall_overlap_rule_needs_signal_and_similarity(tmp_path):
+    log = LoopEventLog(tmp_path / "e.jsonl")
+    bank = CardBank(log)
+    bank.admit(_card("sig"), task_id="t1", try_id="A")
+    bank.admit(_card("nosig", task="t2", signals=()), task_id="t2", try_id="B")
+    log.append("TASK_COMMITTED", task_id="t1", try_id="A")
+    log.append("TASK_COMMITTED", task_id="t2", try_id="B")
+    req = "读取 insurance.csv,计算 charges 列的总和"
+    kw = {"min_score": 0.3, "require_signal_overlap": True}
+    # no detected signal on the task → nothing, however similar the request
+    assert bank.recall(req, [], **kw) == []
+    hits = bank.recall(req, ["footer"], limit=5, **kw)
+    assert [c.card_id for c, _ in hits] == ["sig"] and hits[0][1] <= 1.0      # score = cosine, no bonus
+    # signal overlap alone is not enough
+    assert bank.recall("完全无关的问题 zzz", ["footer"], **kw) == []
+    # the legacy rule would let the bonus carry a dissimilar request over the line
+    assert bank.recall("完全无关的问题 zzz", ["footer"], min_score=0.3)

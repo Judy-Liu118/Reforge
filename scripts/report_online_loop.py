@@ -23,7 +23,7 @@ from reforge.online.canary import wilson  # noqa: E402
 from reforge.online.card_bank import CardBank  # noqa: E402
 from reforge.online.decision import TAU  # noqa: E402
 from reforge.online.loop_log import LoopEventLog  # noqa: E402
-from reforge.online.shadow import ShadowLog, calibration, calibration_by_tier  # noqa: E402
+from reforge.online.shadow import ShadowLog, calibration, calibration_by_tier, calibration_pairs  # noqa: E402
 
 CAVEATS = f"""\
 - **τ = {TAU} is pre-registered, uncalibrated and provisional.** The calibration tables below are the
@@ -37,7 +37,13 @@ CAVEATS = f"""\
 - **Retry success is not lift.** The retry card was distilled from that same task. Lift is reported from
   the canary A/B only, and with n = 12 it can only detect large changes.
 - Canary lift CI: Newcombe (1998) method 10 with the corrected φ, Wilson bounds per arm; harness errors are
-  excluded from `n_pairs`. Not cross-checked against an external reference implementation.
+  excluded from `n_pairs`. Cross-checked by a paired percentile bootstrap on the same pairs (B = 10000,
+  seed 0; "agree" = same zero-inclusion and both endpoints within 0.10, fixed before the run). With no
+  discordant pairs the bootstrap collapses to [0, 0] and is reported as disagreeing — that is the
+  bootstrap's known small-n failure, not evidence of certainty.
+- **Recall rule (pre-registered):** a card is recalled cross-task only if its data signals overlap the
+  current task's detected L1 signals AND request cosine ≥ the min score. Trap kinds the probes cannot
+  signal are a known blind spot — see "Recall coverage" below (measured from the run).
 """
 
 
@@ -95,6 +101,25 @@ def build(root: Path) -> str:
         out.append(f"| [{b['lo']:.2f}, {b['hi']:.2f}) | {b['n']} | {b['mean_conf'] and round(b['mean_conf'], 3)} | "
                    f"{b['accuracy'] and round(b['accuracy'], 3)} |")
 
+    out += ["\nAll tiers — (self-reported conf, claim right vs gold) pairs per bin; `cheap_pass` is a cheap-tier "
+            "pass read as claim *pass* at its 0.4:\n", "| tier | conf bin | n | mean conf | accuracy |",
+            "|---|---|---|---|---|"]
+    for t, bins in calibration_pairs(rows).items():
+        for b in bins:
+            if b["n"]:
+                out.append(f"| {t} | [{b['lo']:.2f}, {b['hi']:.2f}) | {b['n']} | {b['mean_conf']} | {b['accuracy']} |")
+
+    out += ["\n## Recall coverage (known blind spot)\n",
+            "Trap stream tasks, attempt 1: how many had **no** L1 signal detected — under the pre-registered rule a "
+            "card from such a task is never recalled cross-task (it can still drive its own retry / be promoted).\n",
+            "| trap kind | tasks | no signal detected |", "|---|---|---|"]
+    kinds: dict[str, list] = defaultdict(list)
+    for e in log.events("VERDICT"):
+        if e.task_id.startswith("trap:") and e.payload.get("attempt", 1) == 1:
+            kinds[e.task_id.split(":", 1)[1].split("__")[0]].append(not e.payload.get("signals"))
+    for k, v in sorted(kinds.items()):
+        out.append(f"| {k} | {len(v)} | {sum(v)} |")
+
     out += ["\n## Cards\n", "| card | status | minted by | source task | title | observers | used by (tasks) |",
             "|---|---|---|---|---|---|---|"]
     for c in bank.cards().values():
@@ -107,15 +132,16 @@ def build(root: Path) -> str:
 
     res = sorted((e.payload for e in log.events("CANARY_RESULT")), key=lambda p: p["checkpoint"])
     out += ["\n## Canary A/B (held-out, gold-scored)\n",
-            "| checkpoint (tasks committed) | bank active | n pairs | on with cards | off pass [Wilson] | on pass [Wilson] | on-only / off-only | lift [Newcombe] |",
-            "|---|---|---|---|---|---|---|---|"]
+            "| checkpoint (tasks committed) | bank active | n pairs | on with cards | off pass [Wilson] | on pass [Wilson] | on-only / off-only | lift [Newcombe] | bootstrap CI | agree |",
+            "|---|---|---|---|---|---|---|---|---|---|"]
     for p in res:
         n = p["n_pairs"]
         out.append(f"| {p['checkpoint']} | {p['bank_active']} | {n} | {p['n_on_with_cards']} | "
                    f"{_pct(p['off_pass'], n)} {_ci(wilson(p['off_pass'], n))} | {_pct(p['on_pass'], n)} {_ci(wilson(p['on_pass'], n))} | "
-                   f"{p['on_only']} / {p['off_only']} | {p['lift']} {_ci(p['lift_ci'])} |")
+                   f"{p['on_only']} / {p['off_only']} | {p['lift']} {_ci(p['lift_ci'])} | {_ci(p.get('lift_ci_boot'))} | "
+                   f"{p.get('ci_agree', '—')} |")
     if not res:
-        out.append("| — | | | | | | | |")
+        out.append("| — | | | | | | | | | |")
     return "\n".join(out) + "\n"
 
 

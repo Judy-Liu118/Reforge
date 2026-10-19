@@ -17,7 +17,10 @@ When recall returns nothing the two inputs are identical, so `on` reuses the
 
 Reported per checkpoint: pass rates with Wilson 95% CIs and the paired lift
 (on − off) with Newcombe's Wilson-based CI for paired proportions. With
-n = 12 this only detects large changes. Lift is reported from here only — a
+n = 12 this only detects large changes. The Newcombe CI is cross-checked by a
+paired percentile bootstrap on the same pairs (pre-registered: B = 10000,
+seed 0; "agree" = same verdict on whether 0 is inside, and both endpoints
+within 0.10). Lift is reported from here only — a
 retry succeeding inside the loop is not evidence, its card was fit to that task.
 """
 
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import shutil
 from pathlib import Path
 
@@ -71,16 +75,41 @@ def newcombe_paired(a: int, b: int, c: int, d: int, z: float = Z) -> tuple[float
     return round(diff, 4), (round(max(-1.0, diff - delta), 4), round(min(1.0, diff + eps), 4))
 
 
+BOOT_B, BOOT_SEED, AGREE_TOL = 10_000, 0, 0.10
+
+
+def bootstrap_paired(a: int, b: int, c: int, d: int, *, n_boot: int = BOOT_B, seed: int = BOOT_SEED,
+                     alpha: float = 0.05) -> tuple[float, float] | None:
+    """Percentile CI for Δ = p_on − p_off, resampling the n pairs with replacement."""
+    n = a + b + c + d
+    if n == 0:
+        return None
+    pairs = [1] * b + [-1] * c + [0] * (a + d)      # per-pair on − off
+    rng = random.Random(seed)
+    diffs = sorted(sum(rng.choices(pairs, k=n)) / n for _ in range(n_boot))
+    lo, hi = diffs[int(alpha / 2 * n_boot)], diffs[min(n_boot - 1, int((1 - alpha / 2) * n_boot))]
+    return round(lo, 4), round(hi, 4)
+
+
+def ci_agree(ci1, ci2, tol: float = AGREE_TOL) -> bool | None:
+    if not ci1 or not ci2:
+        return None
+    same_zero = (ci1[0] <= 0 <= ci1[1]) == (ci2[0] <= 0 <= ci2[1])
+    return same_zero and abs(ci1[0] - ci2[0]) <= tol and abs(ci1[1] - ci2[1]) <= tol
+
+
 class Canary:
     def __init__(self, root: Path, pairs: list, *, agent, data_signals, log: LoopEventLog, bank: CardBank,
                  every: int = 20, recall_min_score: float = 0.3, recall_signal_bonus: float = 0.3,
+                 recall_require_signal_overlap: bool = False,
                  verbose: bool = False) -> None:
         self.root = Path(root)
         self.pairs = list(pairs)
         self.agent, self.data_signals = agent, data_signals
         self.log, self.bank = log, bank
         self.every = every
-        self.recall_kw = {"min_score": recall_min_score, "signal_bonus": recall_signal_bonus}
+        self.recall_kw = {"min_score": recall_min_score, "signal_bonus": recall_signal_bonus,
+                          "require_signal_overlap": recall_require_signal_overlap}
         self.verbose = verbose
         self.rows_path = self.root / "canary.jsonl"
 
@@ -169,8 +198,11 @@ class Canary:
             d += not x and not y
         n = a + b + c + d
         lift = newcombe_paired(a, b, c, d)
+        boot = bootstrap_paired(a, b, c, d)
         return {"checkpoint": checkpoint, "bank_version": version, "bank_active": n_active, "n_pairs": n,
                 "off_pass": a + c, "on_pass": a + b, "off_ci": wilson(a + c, n), "on_ci": wilson(a + b, n),
                 "both_right": a, "on_only": b, "off_only": c, "both_wrong": d,
                 "lift": lift[0] if lift else None, "lift_ci": list(lift[1]) if lift else None,
+                "lift_ci_boot": list(boot) if boot else None,
+                "ci_agree": ci_agree(lift[1] if lift else None, boot),
                 "n_on_with_cards": with_cards}

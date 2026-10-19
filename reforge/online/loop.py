@@ -99,6 +99,7 @@ class LoopConfig:
     audit_seed: int = 0
     recall_min_score: float = 0.3
     recall_signal_bonus: float = 0.3
+    recall_require_signal_overlap: bool = True   # pre-registered rule, see CardBank.recall
     retry_on_confident_fail: bool = True
     agent_token_stop: int = 0         # 0 = no stop
     keep_work: bool = False
@@ -136,6 +137,7 @@ class OnlineLoop:
                              log=self.log, bank=self.bank, every=self.cfg.canary_every,
                              recall_min_score=self.cfg.recall_min_score,
                              recall_signal_bonus=self.cfg.recall_signal_bonus,
+                             recall_require_signal_overlap=self.cfg.recall_require_signal_overlap,
                              verbose=self.cfg.verbose) if canary_pairs else None
 
     def _spent(self) -> int:
@@ -232,7 +234,8 @@ class OnlineLoop:
         signals = self.verifier.data_signals(pristine)
         hits = [(override, 1.0)] if override is not None else self.bank.recall(
             spec.request, signals, min_score=self.cfg.recall_min_score,
-            signal_bonus=self.cfg.recall_signal_bonus, pending_try=try_id)
+            signal_bonus=self.cfg.recall_signal_bonus,
+            require_signal_overlap=self.cfg.recall_require_signal_overlap, pending_try=try_id)
         traj = self.agent.run(spec, data_dir, work / f"a{n}" / "run", [c.to_memory_record() for c, _ in hits])
         self.log.append("ATTEMPT_FINISHED", **T, attempt=n, run_id=run_id, **traj.summary())
         if traj.error:

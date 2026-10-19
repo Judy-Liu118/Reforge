@@ -101,20 +101,36 @@ class CardBank:
         return provenance_hash(*sorted(c.card_id for c in self.by_status(ACTIVE)))
 
     def recall(self, request: str, signals: list[str] | tuple[str, ...] = (), *, limit: int = 1,
-               min_score: float = 0.3, signal_bonus: float = 0.3,
+               min_score: float = 0.3, signal_bonus: float = 0.3, require_signal_overlap: bool = False,
                pending_try: str | None = None) -> list[tuple[Card, float]]:
         """Active cards only, request char-ngram cosine + bonus on shared data signals.
 
         `min_score` closes the old hole where any non-empty memory injected
         its top-1 card into every task regardless of relevance.
+
+        `require_signal_overlap` (pre-registered for the full run, 2026-10-19):
+        a card is recalled only if its source task's data signals overlap the
+        current task's detected L1 signals AND request cosine alone >= min_score;
+        the score is then that cosine. Templated requests made similarity alone
+        too broad (smoke: a footer card reached all 8 trap canaries). Cost: a
+        card whose source had no detectable signal (e.g. footer written into a
+        numeric column) is never recalled cross-task — it can still drive its
+        own source task's retry or be promoted by hand.
         """
         q = _char_ngrams(request)
         sig = set(signals)
         scored = []
         for c in self.by_status(ACTIVE, pending_try=pending_try):
-            s = _cosine(q, _char_ngrams(c.source_request)) + (signal_bonus if sig & set(c.signals) else 0.0)
-            if s >= min_score:
-                scored.append((c, round(s, 4)))
+            cos = _cosine(q, _char_ngrams(c.source_request))
+            if require_signal_overlap:
+                if not sig & set(c.signals) or cos < min_score:
+                    continue
+                s = cos
+            else:
+                s = cos + (signal_bonus if sig & set(c.signals) else 0.0)
+                if s < min_score:
+                    continue
+            scored.append((c, round(s, 4)))
         scored.sort(key=lambda x: (-x[1], x[0].card_id))
         return scored[:limit]
 

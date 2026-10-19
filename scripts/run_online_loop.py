@@ -8,6 +8,10 @@ committed tasks are skipped, an interrupted task is rerun from scratch.
 
 Gold reaches only runs/online/<name>/shadow.jsonl, after each commit.
 
+run_config.json carries a `preregistration` block (τ, recall rule, audit
+rates, canary schedule, CI methods, stop) written before the first task;
+a rerun whose settings differ from it refuses to start.
+
     # smoke
     python scripts/run_online_loop.py --name smoke --max-tasks 4
     # BIRD adapter smoke
@@ -51,6 +55,8 @@ def main() -> None:
     ap.add_argument("--critic-budget", type=int, default=900_000)
     ap.add_argument("--agent-token-stop", type=int, default=700_000)
     ap.add_argument("--recall-min-score", type=float, default=0.3)
+    ap.add_argument("--recall-rule", choices=("overlap_and_sim", "sim_plus_bonus"), default="overlap_and_sim",
+                    help="overlap_and_sim: card signals ∩ task L1 signals ≠ ∅ AND request cosine ≥ min score")
     ap.add_argument("--no-retry", action="store_true")
     ap.add_argument("--canary-every", type=int, default=20, help="committed tasks between canary checkpoints")
     ap.add_argument("--no-canary", action="store_true")
@@ -62,7 +68,8 @@ def main() -> None:
 
     from online_verifier import LadderVerifier
 
-    from reforge.online.decision import CriticUnavailable
+    from reforge.online.canary import AGREE_TOL, BOOT_B, BOOT_SEED
+    from reforge.online.decision import TAU, CriticUnavailable
     from reforge.online.loop import LoopConfig, OnlineLoop
     from reforge.online.tasks import mix
 
@@ -79,14 +86,36 @@ def main() -> None:
 
     verifier = LadderVerifier(args.critic_model, root, budget=args.critic_budget, k=args.critic_k)
     cfg = LoopConfig(audit_rates=_kv(args.audit), audit_seed=args.seed, recall_min_score=args.recall_min_score,
+                     recall_require_signal_overlap=args.recall_rule == "overlap_and_sim",
                      retry_on_confident_fail=not args.no_retry, agent_token_stop=args.agent_token_stop,
                      keep_work=args.keep_work, verbose=True, canary_every=args.canary_every)
+    prereg = {
+        "tau": TAU, "tau_status": "uncalibrated, provisional; not tuned on smoke critic results",
+        "recall_rule": args.recall_rule, "recall_min_score": args.recall_min_score,
+        "recall_known_blind_spot": "a card whose source task had no detectable L1 signal (e.g. footer written "
+                                   "into a numeric column) is never recalled cross-task; it can still drive its "
+                                   "own source task's retry or be promoted by hand",
+        "audit_rates": cfg.audit_rates, "audit_seed": args.seed, "critic_k": args.critic_k,
+        "minting": "active only from critic-confirmed fail (conf>=tau) or manual promote; cheap-tier-only "
+                   "fail -> quarantined, injected only into its own source task's retry",
+        "canary": sorted(canary_ids), "canary_every": args.canary_every, "canary_enabled": not args.no_canary,
+        "lift_ci": {"primary": "Newcombe 1998 method 10, corrected phi",
+                    "cross_check": f"paired percentile bootstrap B={BOOT_B} seed={BOOT_SEED}",
+                    "agree": f"same zero-inclusion and both endpoints within {AGREE_TOL}"},
+        "agent_token_stop": args.agent_token_stop, "critic_budget": args.critic_budget,
+        "stream": [s.id for s, _ in stream], "verifier_sha": verifier.sha,
+    }
     cfg_path = root / "run_config.json"
-    if not cfg_path.exists():
+    if cfg_path.exists():
+        locked = json.loads(cfg_path.read_text(encoding="utf-8")).get("preregistration")
+        if locked is not None and locked != json.loads(json.dumps(prereg)):
+            diff = sorted(k for k in set(locked) | set(prereg) if locked.get(k) != json.loads(json.dumps(prereg)).get(k))
+            sys.exit(f"refusing to run: settings differ from the pre-registration in {cfg_path}: {diff}")
+    else:
         cfg_path.write_text(json.dumps({**vars(args), "verifier_sha": verifier.sha,
                                         "stream": [s.id for s, _ in stream], "canary": sorted(canary_ids),
-                                        "holdout_tables": sorted(holdout)}, ensure_ascii=False, indent=2),
-                            encoding="utf-8")
+                                        "holdout_tables": sorted(holdout), "preregistration": prereg},
+                                       ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"agent={args.agent_model} critic={args.critic_model} k={args.critic_k} verifier_sha={verifier.sha}\n"
           f"stream={len(stream)} ({ {k: len(v) for k, v in sources.items()} }) canary={len(canary)} "
           f"holdout_tables={sorted(holdout)}\n→ {root}", flush=True)

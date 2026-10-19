@@ -382,3 +382,36 @@ def test_canary_resume_mid_checkpoint(tmp_path):
     loop2.run(_stream(["csv:c1"]))
     assert [c[0] for c in loop2.agent.calls][0] == "infiagent:can2"                    # can1 not rerun
     assert loop2.log.events("CANARY_RESULT")[0].payload["n_pairs"] == 2
+
+
+def test_bootstrap_cross_check():
+    from reforge.online.canary import bootstrap_paired, ci_agree, newcombe_paired
+
+    assert bootstrap_paired(0, 0, 0, 0) is None and ci_agree(None, (0, 1)) is None
+    assert bootstrap_paired(5, 0, 0, 5) == (0.0, 0.0)               # no discordant pairs: degenerate
+    assert ci_agree(newcombe_paired(5, 0, 0, 5)[1], (0.0, 0.0)) is False
+    assert bootstrap_paired(2, 3, 1, 6) == bootstrap_paired(2, 3, 1, 6)      # seeded
+    lo, hi = bootstrap_paired(3, 6, 0, 3)
+    assert 0 < lo < 0.5 < hi <= 1
+    assert ci_agree((-0.1, 0.4), (-0.15, 0.45)) and not ci_agree((-0.1, 0.4), (0.05, 0.45))
+
+
+def test_canary_result_carries_both_cis(tmp_path):
+    canary = _stream(["trap:can1", "infiagent:can2"])
+    loop = OnlineLoop(tmp_path / "run", agent=FakeAgent(), verifier=FakeVerifier(), distiller=PerTaskDistiller(),
+                      config=LoopConfig(canary_every=2), canary_pairs=canary)
+    loop.run(_stream(["trap:crit1", "trap:crit2"]))
+    p = loop.log.events("CANARY_RESULT")[-1].payload
+    assert p["lift_ci_boot"] is not None and p["ci_agree"] in (True, False)
+
+
+def test_shadow_pairs_cover_every_tier(tmp_path):
+    loop = _loop(tmp_path, audit_rates={"trap": 1.0, "infiagent": 0.0, "csv": 0.0})
+    loop.run(_stream(["trap:footer", "trap:crit1", "infiagent:q1"]))
+    tiers = {q["tier"] for r in loop.shadow.rows() for q in r["pairs"]}
+    assert {"L1b", "critic", "cheap_pass"} <= tiers
+    for r in loop.shadow.rows():
+        if r["critic_verdict"] in ("wrong", "ok"):
+            assert any(q["tier"] == "critic" and q["conf"] == r["critic_conf"] for q in r["pairs"])
+    from reforge.online.shadow import calibration_pairs
+    assert set(calibration_pairs(loop.shadow.rows())) == tiers

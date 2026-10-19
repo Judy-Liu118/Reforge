@@ -17,6 +17,13 @@ Per attempt row:
                            paired with label_correct per tier. L1b's 0.95 was
                            measured on the trap corpus only — this pairing is
                            how its behaviour on natural data gets measured
+    pairs                  every (tier, claim, self-reported conf, claim right
+                           vs gold) the attempt produced, for every tier that
+                           made one: the deciding cheap tier (L0 / L1b), the
+                           critic whenever it was called (also below τ, also
+                           when audited), and a cheap-tier pass as claim
+                           "pass" at its 0.4 — so all tiers share one
+                           calibration table
 """
 
 from __future__ import annotations
@@ -47,6 +54,22 @@ def _agrees(claim: str | None, answer_correct: bool | None) -> bool | None:
     return None
 
 
+def _pairs(verdict: dict, answer_correct: bool | None, label_correct: bool | None,
+           critic_correct: bool | None) -> list[dict]:
+    out = []
+    label, tier = verdict.get("label"), verdict.get("tier")
+    if not verdict.get("critic_called"):
+        if label in ("pass", "fail"):
+            out.append({"tier": tier, "claim": label, "conf": verdict.get("confidence"), "correct": label_correct})
+        elif label == "unverified":
+            out.append({"tier": "cheap_pass", "claim": "pass", "conf": verdict.get("confidence"),
+                        "correct": answer_correct})
+    if verdict.get("critic_called") and verdict.get("critic_verdict") in ("wrong", "ok"):
+        out.append({"tier": tier or "critic", "claim": verdict["critic_verdict"], "conf": verdict.get("critic_conf"),
+                    "correct": critic_correct})
+    return out
+
+
 class ShadowLog:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -68,14 +91,17 @@ class ShadowLog:
             return None
         s = score(gold_ref, stdout)
         ok = s.get("correct")
+        label_correct = _agrees(verdict.get("label"), ok)
+        critic_correct = _agrees(verdict.get("critic_verdict"), ok)
         row = {
             "task_id": task_id, "try_id": try_id, "attempt": attempt, "source": source,
             "answer_correct": ok, "answer": s.get("answer"), "gold": s.get("gold"),
             "label": verdict.get("label"), "confidence": verdict.get("confidence"),
             "tier": verdict.get("tier"), "audited": verdict.get("audited", False),
-            "label_correct": _agrees(verdict.get("label"), ok),
+            "label_correct": label_correct,
             "critic_verdict": verdict.get("critic_verdict"), "critic_conf": verdict.get("critic_conf"),
-            "critic_verdict_correct": _agrees(verdict.get("critic_verdict"), ok),
+            "critic_verdict_correct": critic_correct,
+            "pairs": _pairs(verdict, ok, label_correct, critic_correct),
             "card_ids": verdict.get("card_ids", []),
             "ts": datetime.now(timezone.utc).isoformat(),
         }
@@ -125,3 +151,22 @@ def calibration_by_tier(rows: list[dict]) -> dict[str, dict]:
         b["conf_sum"] += r["confidence"]
     return {t: {"n": b["n"], "accuracy": round(b["correct"] / b["n"], 4),
                 "mean_conf": round(b["conf_sum"] / b["n"], 4)} for t, b in out.items()}
+
+
+def calibration_pairs(rows: list[dict], edges: tuple[float, ...] = (0.0, 0.5, 0.7, 0.85, 1.0001)) -> dict[str, list]:
+    """Per tier, per confidence bin: self-reported conf vs how often the claim matched gold."""
+    pts: dict[str, list] = {}
+    for r in rows:
+        for q in r.get("pairs", []):
+            if q.get("correct") is not None and isinstance(q.get("conf"), (int, float)):
+                pts.setdefault(q["tier"], []).append((q["conf"], bool(q["correct"])))
+    out = {}
+    for t, ps in sorted(pts.items()):
+        bins = []
+        for lo, hi in zip(edges, edges[1:]):
+            b = [(c, ok) for c, ok in ps if lo <= c < hi]
+            bins.append({"lo": lo, "hi": min(hi, 1.0), "n": len(b),
+                         "accuracy": round(sum(ok for _, ok in b) / len(b), 4) if b else None,
+                         "mean_conf": round(sum(c for c, _ in b) / len(b), 4) if b else None})
+        out[t] = bins
+    return out
