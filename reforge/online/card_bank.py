@@ -121,18 +121,19 @@ class CardBank:
 
     # -- writes (all go through the log) ---------------------------------------
 
-    def admit(self, card: Card, *, task_id: str, try_id: str, reasons: list[str] | None = None) -> Card:
+    def admit(self, card: Card, *, task_id: str, try_id: str, reasons: list[str] | None = None, **extra) -> Card:
         d = {**card.__dict__, "signals": list(card.signals), "observers": list(card.observers or (card.source_task_id,))}
         d.pop("history")
-        self.log.append("CARD_ADMITTED", task_id=task_id, try_id=try_id, card=d, reasons=reasons or [])
+        self.log.append("CARD_ADMITTED", task_id=task_id, try_id=try_id, card=d, reasons=reasons or [], **extra)
         return self.get(card.card_id, pending_try=try_id)
 
     def reject(self, body: dict, reasons: list[str], *, task_id: str, try_id: str, **extra) -> None:
         self.log.append("CARD_REJECTED", task_id=task_id, try_id=try_id, body=body, reasons=reasons, **extra)
 
-    def observe(self, card_id: str, *, task_id: str, try_id: str) -> Card:
+    def observe(self, card_id: str, *, task_id: str, try_id: str, **extra) -> Card:
         """A near-duplicate was distilled by *task_id*; promote on enough distinct tasks."""
-        self.log.append("CARD_OBSERVED", task_id=task_id, try_id=try_id, card_id=card_id, observer_task_id=task_id)
+        self.log.append("CARD_OBSERVED", task_id=task_id, try_id=try_id, card_id=card_id, observer_task_id=task_id,
+                        **extra)
         c = self.get(card_id, pending_try=try_id)
         if c.status == QUARANTINED and len(c.observers) >= self.promote_after:
             self.log.append("CARD_PROMOTED", task_id=task_id, try_id=try_id, card_id=card_id,
