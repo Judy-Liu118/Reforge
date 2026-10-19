@@ -55,8 +55,11 @@ def main() -> None:
     ap.add_argument("--critic-budget", type=int, default=900_000)
     ap.add_argument("--agent-token-stop", type=int, default=700_000)
     ap.add_argument("--recall-min-score", type=float, default=0.3)
-    ap.add_argument("--recall-rule", choices=("overlap_and_sim", "sim_plus_bonus"), default="overlap_and_sim",
-                    help="overlap_and_sim: card signals ∩ task L1 signals ≠ ∅ AND request cosine ≥ min score")
+    ap.add_argument("--recall-rule", choices=("signal_or_slot", "overlap_and_sim", "sim_plus_bonus"),
+                    default="signal_or_slot", help="see CardBank.recall; signal_or_slot = pre-registration v2")
+    ap.add_argument("--supersedes", default="", help="run name whose pre-registration this one replaces")
+    ap.add_argument("--change-reason", default="", help="why the superseded pre-registration was replaced")
+    ap.add_argument("--tasks", default="", help="comma list: keep only these stream task ids, in this order (smoke)")
     ap.add_argument("--no-retry", action="store_true")
     ap.add_argument("--canary-every", type=int, default=20, help="committed tasks between canary checkpoints")
     ap.add_argument("--no-canary", action="store_true")
@@ -81,20 +84,37 @@ def main() -> None:
         bird_dir=(_ROOT / args.bird_dir) if "bird" in want else None, bird_limit=args.bird_limit)
     sources = {k: v for k, v in sources.items() if k in want}
     stream = list(mix(sources, _kv(args.weights), seed=args.seed))
+    if args.tasks:
+        by_id = {s.id: (s, g) for s, g in stream}
+        stream = [by_id[t.strip()] for t in args.tasks.split(",") if t.strip()]
     canary_ids = {s.id for s, _ in canary}
     assert not canary_ids & {s.id for s, _ in stream} and not holdout & {t for s, _ in stream for t in s.tables}
 
     verifier = LadderVerifier(args.critic_model, root, budget=args.critic_budget, k=args.critic_k)
     cfg = LoopConfig(audit_rates=_kv(args.audit), audit_seed=args.seed, recall_min_score=args.recall_min_score,
-                     recall_require_signal_overlap=args.recall_rule == "overlap_and_sim",
+                     recall_rule=args.recall_rule,
                      retry_on_confident_fail=not args.no_retry, agent_token_stop=args.agent_token_stop,
                      keep_work=args.keep_work, verbose=True, canary_every=args.canary_every)
+    history = []
+    if args.supersedes:
+        old_cfg = json.loads((_ROOT / "runs" / "online" / args.supersedes / "run_config.json").read_text(encoding="utf-8"))
+        old = old_cfg["preregistration"]
+        history = old.get("history", []) + [{"version": old.get("version", 1), "run": args.supersedes,
+                                             "block": {k: v for k, v in old.items() if k != "history"},
+                                             "superseded_because": args.change_reason}]
     prereg = {
+        "version": len(history) + 1,
         "tau": TAU, "tau_status": "uncalibrated, provisional; not tuned on smoke critic results",
         "recall_rule": args.recall_rule, "recall_min_score": args.recall_min_score,
-        "recall_known_blind_spot": "a card whose source task had no detectable L1 signal (e.g. footer written "
-                                   "into a numeric column) is never recalled cross-task; it can still drive its "
-                                   "own source task's retry or be promoted by hand",
+        "recall_rule_text": {
+            "signal_or_slot": "card with signals: signal overlap AND request cosine >= min score; card without "
+                              "signals: same parsed op AND (overlapping target column OR same table family); "
+                              "raw character similarity never used alone",
+            "overlap_and_sim": "signal overlap AND request cosine >= min score",
+            "sim_plus_bonus": "request cosine + signal bonus >= min score"}[args.recall_rule],
+        "recall_known_blind_spot": "a card is never recalled cross-task when it neither shares a signal nor a "
+                                   "slot (op + column/table family) with the task; it can still drive its own "
+                                   "source task's retry or be promoted by hand",
         "audit_rates": cfg.audit_rates, "audit_seed": args.seed, "critic_k": args.critic_k,
         "minting": "active only from critic-confirmed fail (conf>=tau) or manual promote; cheap-tier-only "
                    "fail -> quarantined, injected only into its own source task's retry",
@@ -104,6 +124,7 @@ def main() -> None:
                     "agree": f"same zero-inclusion and both endpoints within {AGREE_TOL}"},
         "agent_token_stop": args.agent_token_stop, "critic_budget": args.critic_budget,
         "stream": [s.id for s, _ in stream], "verifier_sha": verifier.sha,
+        "history": history,
     }
     cfg_path = root / "run_config.json"
     if cfg_path.exists():

@@ -35,6 +35,7 @@ from pathlib import Path
 from reforge.online.card_bank import ACTIVE, CardBank
 from reforge.online.loop_log import LoopEventLog
 from reforge.online.shadow import score
+from reforge.online.slots import task_slots
 
 Z = 1.959964
 
@@ -101,7 +102,7 @@ def ci_agree(ci1, ci2, tol: float = AGREE_TOL) -> bool | None:
 class Canary:
     def __init__(self, root: Path, pairs: list, *, agent, data_signals, log: LoopEventLog, bank: CardBank,
                  every: int = 20, recall_min_score: float = 0.3, recall_signal_bonus: float = 0.3,
-                 recall_require_signal_overlap: bool = False,
+                 recall_rule: str = "sim_plus_bonus",
                  verbose: bool = False) -> None:
         self.root = Path(root)
         self.pairs = list(pairs)
@@ -109,7 +110,7 @@ class Canary:
         self.log, self.bank = log, bank
         self.every = every
         self.recall_kw = {"min_score": recall_min_score, "signal_bonus": recall_signal_bonus,
-                          "require_signal_overlap": recall_require_signal_overlap}
+                          "rule": recall_rule}
         self.verbose = verbose
         self.rows_path = self.root / "canary.jsonl"
 
@@ -146,7 +147,9 @@ class Canary:
                 if (checkpoint, spec.id, "on") in have or off.get("error"):
                     continue
                 pristine = spec.build(work / _safe(spec.id) / "pristine")
-                hits = self.bank.recall(spec.request, self.data_signals(pristine), **self.recall_kw) if active else []
+                hits = self.bank.recall(spec.request, self.data_signals(pristine),
+                                        slots=task_slots(spec.request, spec.tables, pristine),
+                                        **self.recall_kw) if active else []
                 if not hits:
                     self._write({**off, "arm": "on", "card_ids": [], "on_reused_off": True})
                 else:

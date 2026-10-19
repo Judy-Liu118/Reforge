@@ -41,9 +41,8 @@ CAVEATS = f"""\
   seed 0; "agree" = same zero-inclusion and both endpoints within 0.10, fixed before the run). With no
   discordant pairs the bootstrap collapses to [0, 0] and is reported as disagreeing — that is the
   bootstrap's known small-n failure, not evidence of certainty.
-- **Recall rule (pre-registered):** a card is recalled cross-task only if its data signals overlap the
-  current task's detected L1 signals AND request cosine ≥ the min score. Trap kinds the probes cannot
-  signal are a known blind spot — see "Recall coverage" below (measured from the run).
+- **Recall rule:** see the pre-registration section (and its history, if superseded). Cards that share
+  neither a signal nor a slot with a task are never recalled cross-task — see "Recall coverage" below.
 """
 
 
@@ -65,6 +64,18 @@ def build(root: Path) -> str:
            f"agent `{cfg.get('agent_model')}` · critic `{cfg.get('critic_model')}` k={cfg.get('critic_k')} · "
            f"verifier_sha `{cfg.get('verifier_sha')}` · audit `{cfg.get('audit')}`\n",
            "## Caveats\n", CAVEATS]
+    pre = cfg.get("preregistration")
+    if pre:
+        out += [f"## Pre-registration v{pre.get('version', 1)}\n",
+                f"- recall `{pre.get('recall_rule')}`: {pre.get('recall_rule_text', '')}",
+                f"- known blind spot: {pre.get('recall_known_blind_spot', '')}"]
+        for h in pre.get("history", []):
+            out.append(f"- supersedes v{h['version']} (run `{h['run']}`, recall `{h['block'].get('recall_rule')}`): "
+                       f"{h.get('superseded_because', '')}")
+        out.append("")
+    if (root / "notes.md").exists():
+        out += ["## Findings (written by hand, from this run's logs)\n",
+                (root / "notes.md").read_text(encoding="utf-8"), ""]
 
     out += ["## Control metrics (gold-free)\n", "| metric | value |", "|---|---|"]
     out += [f"| {k} | {v} |" for k, v in s.items()]

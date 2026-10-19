@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from reforge.online.card_bank import ACTIVE, EVICTED, QUARANTINED, Card, CardBank, provenance_hash
@@ -126,7 +128,7 @@ def test_recall_overlap_rule_needs_signal_and_similarity(tmp_path):
     log.append("TASK_COMMITTED", task_id="t1", try_id="A")
     log.append("TASK_COMMITTED", task_id="t2", try_id="B")
     req = "读取 insurance.csv,计算 charges 列的总和"
-    kw = {"min_score": 0.3, "require_signal_overlap": True}
+    kw = {"min_score": 0.3, "rule": "overlap_and_sim"}
     # no detected signal on the task → nothing, however similar the request
     assert bank.recall(req, [], **kw) == []
     hits = bank.recall(req, ["footer"], limit=5, **kw)
@@ -135,3 +137,26 @@ def test_recall_overlap_rule_needs_signal_and_similarity(tmp_path):
     assert bank.recall("完全无关的问题 zzz", ["footer"], **kw) == []
     # the legacy rule would let the bonus carry a dissimilar request over the line
     assert bank.recall("完全无关的问题 zzz", ["footer"], min_score=0.3)
+
+
+def test_recall_v2_signal_free_card_by_slots(tmp_path):
+    log = LoopEventLog(tmp_path / "e.jsonl")
+    bank = CardBank(log)
+    src = {"op": "sum", "columns": ["balance"], "tables": ["Credit.csv"], "families": ["credit"]}
+    bank.admit(replace(_card("crit", signals=()), slots=src), task_id="t1", try_id="A")
+    log.append("TASK_COMMITTED", task_id="t1", try_id="A")
+    req = "读取 insurance.csv,计算 charges 列的总和"
+    kw = {"rule": "signal_or_slot", "min_score": 0.3}
+    same_family = {"op": "sum", "columns": ["limit"], "tables": ["Credit.csv"], "families": ["credit"]}
+    same_col = {"op": "sum", "columns": ["balance"], "tables": ["x.csv"], "families": ["x"]}
+    other_op = {"op": "mean", "columns": ["balance"], "tables": ["Credit.csv"], "families": ["credit"]}
+    unrelated = {"op": "sum", "columns": ["charges"], "tables": ["insurance.csv"], "families": ["insurance"]}
+    assert [c.card_id for c, _ in bank.recall("zzz", slots=same_family, **kw)] == ["crit"]   # no char sim needed
+    assert bank.recall("zzz", slots=same_col, **kw)
+    assert bank.recall(req, slots=other_op, **kw) == []
+    # high template similarity alone does not recall a signal-free card any more
+    assert bank.recall(req, ["footer"], slots=unrelated, **kw) == []
+    assert bank.recall(req, slots=None, **kw) == []
+    assert bank.get("crit").slots == src                                                     # survives replay
+    with pytest.raises(ValueError):
+        bank.recall(req, rule="nope")

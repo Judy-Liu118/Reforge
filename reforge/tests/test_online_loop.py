@@ -31,7 +31,12 @@ SCEN = {
     "csv:c1": {"cold": 5.0, "warm": 5.0, "verdict": "residual_ok"},
     "trap:crit1": {"cold": 9.0, "warm": 4.0, "verdict": "residual_wrong"},  # critic confirms → active card
     "trap:crit2": {"cold": 8.0, "warm": 3.0, "verdict": "residual_wrong"},
+    # no signal anywhere; the trap audit sends it to the critic, which confirms → signal-free active card
+    "trap:aud1": {"cold": 9.0, "warm": 4.0, "verdict": "audit_wrong"},
+    "trap:aud2": {"cold": 4.0, "warm": 4.0, "verdict": "cheap"},
+    "trap:aud3": {"cold": 4.0, "warm": 4.0, "verdict": "cheap"},
 }
+TABLES = {"trap:aud1": ("Credit.csv",), "trap:aud2": ("Credit.csv",), "trap:aud3": ("other.csv",)}
 
 
 def _spec(tid):
@@ -40,7 +45,7 @@ def _spec(tid):
     def build(d: Path) -> Path:
         d.mkdir(parents=True, exist_ok=True)
         return d
-    return TaskSpec(id=tid, source=src, request=f"读取 data.csv,计算 {tid} 的总和", tables=(f"{tid}.csv",), build=build)
+    return TaskSpec(id=tid, source=src, request=f"读取 data.csv,计算 {tid} 的总和", tables=TABLES.get(tid, (f"{tid}.csv",)), build=build)
 
 
 class FakeAgent:
@@ -81,7 +86,7 @@ class FakeVerifier:
             return {"verdict": "abstain", "error": "token budget reached", "budget_exhausted": True}
         kind = SCEN[task.id]["verdict"]
         v = {"residual_abstain": "abstain", "residual_ok": "ok"}.get(kind, "ok")
-        if kind == "residual_wrong" and traj.printed == SCEN[task.id]["cold"]:
+        if kind in ("residual_wrong", "audit_wrong") and traj.printed == SCEN[task.id]["cold"]:
             v = "wrong"
         return {"verdict": v, "confidence": 0.9, "suspect": "", "evidence": "", "total_tokens": 50,
                 "printed": traj.printed}
@@ -108,7 +113,7 @@ def _gold(v):
     return numeric_gold(lambda: v, 0.01)
 
 
-GOLDS = {"trap:footer": 10.0, "trap:dupes": 6.0, "infiagent:q1": 1.5, "infiagent:q2": 3.0, "csv:c1": 5.0,
+GOLDS = {"trap:aud1": 4.0, "trap:aud2": 4.0, "trap:aud3": 4.0, "trap:footer": 10.0, "trap:dupes": 6.0, "infiagent:q1": 1.5, "infiagent:q2": 3.0, "csv:c1": 5.0,
          "trap:crit1": 4.0, "trap:crit2": 3.0}
 
 
@@ -415,3 +420,17 @@ def test_shadow_pairs_cover_every_tier(tmp_path):
             assert any(q["tier"] == "critic" and q["conf"] == r["critic_conf"] for q in r["pairs"])
     from reforge.online.shadow import calibration_pairs
     assert set(calibration_pairs(loop.shadow.rows())) == tiers
+
+
+def test_v2_signal_free_critic_card_recalled_by_slot_only(tmp_path):
+    loop = _loop(tmp_path)
+    loop.run(_stream(["trap:aud1", "trap:aud2", "trap:aud3"]))
+    (card,) = loop.bank.by_status(ACTIVE)
+    assert card.source_task_id == "trap:aud1" and card.signals == () and card.verifier_tier == "critic"
+    assert card.slots["op"] == "sum" and card.slots["families"] == ["credit"]
+    first = {t: c for t, c in loop.agent.calls[::-1]}           # attempt-1 card list per task
+    assert first["trap:aud2"] == [card.card_id]                 # same op + same table family
+    assert first["trap:aud3"] == []                             # same template, different family: not recalled
+    legacy = _loop(tmp_path / "legacy", recall_rule="sim_plus_bonus")
+    legacy.run(_stream(["trap:aud1", "trap:aud3"]))
+    assert [c for t, c in legacy.agent.calls if t == "trap:aud3"][0]   # the old rule would have handed it over

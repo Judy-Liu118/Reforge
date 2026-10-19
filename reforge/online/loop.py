@@ -44,6 +44,7 @@ from reforge.online.card_bank import ACTIVE, EVICTED, QUARANTINED, Card, CardBan
 from reforge.online.decision import TAU, Verdict, decide
 from reforge.online.loop_log import LoopEventLog
 from reforge.online.shadow import ShadowLog
+from reforge.online.slots import task_slots
 from reforge.online.tasks import GoldRef, TaskSpec
 
 
@@ -99,7 +100,7 @@ class LoopConfig:
     audit_seed: int = 0
     recall_min_score: float = 0.3
     recall_signal_bonus: float = 0.3
-    recall_require_signal_overlap: bool = True   # pre-registered rule, see CardBank.recall
+    recall_rule: str = "signal_or_slot"        # pre-registration v2, see CardBank.recall
     retry_on_confident_fail: bool = True
     agent_token_stop: int = 0         # 0 = no stop
     keep_work: bool = False
@@ -121,6 +122,7 @@ class _Attempt:
     traj: Trajectory
     verdict: Verdict
     card_ids: list[str]
+    slots: dict
 
 
 class OnlineLoop:
@@ -137,7 +139,7 @@ class OnlineLoop:
                              log=self.log, bank=self.bank, every=self.cfg.canary_every,
                              recall_min_score=self.cfg.recall_min_score,
                              recall_signal_bonus=self.cfg.recall_signal_bonus,
-                             recall_require_signal_overlap=self.cfg.recall_require_signal_overlap,
+                             recall_rule=self.cfg.recall_rule,
                              verbose=self.cfg.verbose) if canary_pairs else None
 
     def _spent(self) -> int:
@@ -232,10 +234,10 @@ class OnlineLoop:
         # verifier gets its own untouched build of the same inputs.
         pristine = spec.build(work / f"a{n}" / "pristine")
         signals = self.verifier.data_signals(pristine)
+        slots = task_slots(spec.request, spec.tables, pristine)
         hits = [(override, 1.0)] if override is not None else self.bank.recall(
-            spec.request, signals, min_score=self.cfg.recall_min_score,
-            signal_bonus=self.cfg.recall_signal_bonus,
-            require_signal_overlap=self.cfg.recall_require_signal_overlap, pending_try=try_id)
+            spec.request, signals, slots=slots, rule=self.cfg.recall_rule, min_score=self.cfg.recall_min_score,
+            signal_bonus=self.cfg.recall_signal_bonus, pending_try=try_id)
         traj = self.agent.run(spec, data_dir, work / f"a{n}" / "run", [c.to_memory_record() for c, _ in hits])
         self.log.append("ATTEMPT_FINISHED", **T, attempt=n, run_id=run_id, **traj.summary())
         if traj.error:
@@ -246,14 +248,14 @@ class OnlineLoop:
         audit = audit_draw(self.cfg.audit_seed, spec.id, n) < self.cfg.audit_rates.get(spec.source, 0.0)
         v = decide(cheap, lambda: self.verifier.critic(spec, pristine, traj, n), audit=audit, tau=self.cfg.tau)
         card_ids = [c.card_id for c, _ in hits]
-        self.log.append("VERDICT", **T, attempt=n, run_id=run_id, card_ids=card_ids,
+        self.log.append("VERDICT", **T, attempt=n, run_id=run_id, card_ids=card_ids, slots=slots,
                         audit_eligible=audit, verifier_sha=self.verifier.sha,
                         l1=cheap.get("l1"), l1b=cheap.get("l1b"), **v.payload())
         if self.cfg.verbose:
             print(f"  [{spec.id:34s} a{n}] {v.label:10s} conf={v.confidence} tier={v.tier:9s} {v.reason:20s} "
                   f"printed={traj.printed} cards={card_ids} inj={traj.card_injected} "
                   f"tok={traj.tokens_prompt + traj.tokens_completion}", flush=True)
-        return _Attempt(n, run_id, pristine, traj, v, card_ids)
+        return _Attempt(n, run_id, pristine, traj, v, card_ids, slots)
 
     # -- confident failure → card --------------------------------------------------
 
@@ -289,7 +291,7 @@ class OnlineLoop:
         card = Card(
             card_id=uuid.uuid4().hex[:10], body=body, source_task_id=spec.id, source_run_id=a.run_id,
             source_request=spec.request, created_at=datetime.now(timezone.utc).isoformat(),
-            verifier_tier=v.tier, critic_confidence=v.critic_conf, signals=v.signals,
+            verifier_tier=v.tier, critic_confidence=v.critic_conf, signals=v.signals, slots=a.slots,
             provenance=provenance_hash(spec.request, traj.code_tail, traj.stdout_tail,
                                        json.dumps(v.payload(), sort_keys=True, ensure_ascii=False),
                                        self.verifier.sha, self.distiller.model),

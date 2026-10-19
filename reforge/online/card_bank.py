@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, replace
 
 from reforge.memory.substrate import _char_ngrams, _cosine
 from reforge.online.loop_log import LoopEventLog
+from reforge.online.slots import slot_match
 
 ACTIVE, QUARANTINED, EVICTED = "active", "quarantined", "evicted"
 
@@ -56,6 +57,7 @@ class Card:
     provenance: str
     status: str = ACTIVE
     observers: tuple[str, ...] = ()  # distinct task ids that produced this card
+    slots: dict = field(default_factory=dict)   # source task's op / columns / tables (slots.task_slots)
     history: tuple[dict, ...] = field(default_factory=tuple)
 
     def to_memory_record(self) -> dict:
@@ -100,37 +102,41 @@ class CardBank:
         """Hash of the active set — stamps canary results."""
         return provenance_hash(*sorted(c.card_id for c in self.by_status(ACTIVE)))
 
-    def recall(self, request: str, signals: list[str] | tuple[str, ...] = (), *, limit: int = 1,
-               min_score: float = 0.3, signal_bonus: float = 0.3, require_signal_overlap: bool = False,
+    RULES = ("sim_plus_bonus", "overlap_and_sim", "signal_or_slot")
+
+    def recall(self, request: str, signals: list[str] | tuple[str, ...] = (), *, slots: dict | None = None,
+               rule: str = "sim_plus_bonus", limit: int = 1, min_score: float = 0.3, signal_bonus: float = 0.3,
                pending_try: str | None = None) -> list[tuple[Card, float]]:
-        """Active cards only, request char-ngram cosine + bonus on shared data signals.
+        """Active cards only.
 
-        `min_score` closes the old hole where any non-empty memory injected
-        its top-1 card into every task regardless of relevance.
-
-        `require_signal_overlap` (pre-registered for the full run, 2026-10-19):
-        a card is recalled only if its source task's data signals overlap the
-        current task's detected L1 signals AND request cosine alone >= min_score;
-        the score is then that cosine. Templated requests made similarity alone
-        too broad (smoke: a footer card reached all 8 trap canaries). Cost: a
-        card whose source had no detectable signal (e.g. footer written into a
-        numeric column) is never recalled cross-task — it can still drive its
-        own source task's retry or be promoted by hand.
+        sim_plus_bonus   request char-ngram cosine + bonus on shared data signals
+                         >= min_score (smoke runs; too broad on templated requests)
+        overlap_and_sim  pre-registration v1: card signals ∩ task L1 signals ≠ ∅
+                         AND cosine >= min_score. Locked critic-minted cards out:
+                         the critic mostly runs where the probes saw nothing, so
+                         those cards carry no signals (full v1, t=20)
+        signal_or_slot   pre-registration v2: a card WITH signals as v1; a card
+                         WITHOUT signals by task slots — same op AND (overlapping
+                         target column OR same table family), never by raw
+                         character similarity. Score = cosine either way, for
+                         ranking only.
         """
+        if rule not in self.RULES:
+            raise ValueError(f"unknown recall rule {rule!r}")
         q = _char_ngrams(request)
         sig = set(signals)
         scored = []
         for c in self.by_status(ACTIVE, pending_try=pending_try):
             cos = _cosine(q, _char_ngrams(c.source_request))
-            if require_signal_overlap:
-                if not sig & set(c.signals) or cos < min_score:
-                    continue
-                s = cos
-            else:
+            if rule == "sim_plus_bonus":
                 s = cos + (signal_bonus if sig & set(c.signals) else 0.0)
-                if s < min_score:
-                    continue
-            scored.append((c, round(s, 4)))
+                ok = s >= min_score
+            elif rule == "overlap_and_sim" or c.signals:
+                s, ok = cos, bool(sig & set(c.signals)) and cos >= min_score
+            else:
+                s, ok = cos, slot_match(c.slots, slots)
+            if ok:
+                scored.append((c, round(s, 4)))
         scored.sort(key=lambda x: (-x[1], x[0].card_id))
         return scored[:limit]
 
