@@ -4,15 +4,22 @@ Nothing is stored outside the log: card state is replayed from CARD_* events
 of committed tries, so resume, rollback and "which runs used this card" are
 all just reads of the log.
 
-Lifecycle:
-    admitted active        gate passed and the verdict was confident
-    admitted quarantined   gate failed softly or the verdict was borderline;
-                           stored, never injected into another task
-    promoted               quarantined → active, ONLY by >= 2 distinct tasks
-                           observing the card (near-duplicate re-distilled) or
-                           by a manual promote. A retry succeeding on the
-                           card's own source task never counts: that is the
-                           task the card was fit to.
+Lifecycle (minting rule, 2026-10-19):
+    admitted active        ONLY when the critic confirmed the failure with
+                           conf >= τ (below BORDER stays quarantined) and the
+                           gate passed
+    admitted quarantined   everything else that is worth keeping: failures
+                           seen only by the cheap tiers (L0 / L1b — on natural
+                           data L1b's "repair" can change the question's
+                           meaning, see da0024 in the smoke run), gate soft
+                           fails, borderline critic confidence. Injected only
+                           into its own source task's retry, never elsewhere.
+    promoted               quarantined → active by a manual promote only.
+                           Re-observation (another task distils a near-
+                           duplicate) just accumulates `observers` and queues
+                           the card for review: N tasks hitting the same
+                           cheap-tier bias would look like N independent
+                           confirmations, and nothing here can tell them apart.
     evicted                terminal; a later near-duplicate is rejected
 """
 
@@ -58,9 +65,8 @@ class Card:
 
 
 class CardBank:
-    def __init__(self, log: LoopEventLog, *, promote_after: int = 2) -> None:
+    def __init__(self, log: LoopEventLog) -> None:
         self.log = log
-        self.promote_after = promote_after
 
     # -- projection ----------------------------------------------------------
 
@@ -131,15 +137,10 @@ class CardBank:
         self.log.append("CARD_REJECTED", task_id=task_id, try_id=try_id, body=body, reasons=reasons, **extra)
 
     def observe(self, card_id: str, *, task_id: str, try_id: str, **extra) -> Card:
-        """A near-duplicate was distilled by *task_id*; promote on enough distinct tasks."""
+        """A near-duplicate was distilled by *task_id*: count it, never promote on it."""
         self.log.append("CARD_OBSERVED", task_id=task_id, try_id=try_id, card_id=card_id, observer_task_id=task_id,
                         **extra)
-        c = self.get(card_id, pending_try=try_id)
-        if c.status == QUARANTINED and len(c.observers) >= self.promote_after:
-            self.log.append("CARD_PROMOTED", task_id=task_id, try_id=try_id, card_id=card_id,
-                            reason=f"repeated_observation:{len(c.observers)}_tasks")
-            c = self.get(card_id, pending_try=try_id)
-        return c
+        return self.get(card_id, pending_try=try_id)
 
     def promote(self, card_id: str, reason: str = "manual") -> Card:
         c = self._require(card_id, QUARANTINED)
@@ -148,7 +149,8 @@ class CardBank:
 
     def evict(self, card_id: str, reason: str) -> Card:
         c = self._require(card_id, ACTIVE, QUARANTINED)
-        self.log.append("CARD_EVICTED", card_id=c.card_id, reason=reason)
+        # Snapshot the blast radius into the log itself: which runs were handed this card.
+        self.log.append("CARD_EVICTED", card_id=c.card_id, reason=reason, used_by=self.used_by(card_id))
         return self.get(card_id)
 
     def record_recall(self, *, task_id: str, try_id: str, run_id: str, attempt: int,

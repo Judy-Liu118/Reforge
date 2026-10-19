@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from reforge.online.card_bank import ACTIVE
+from reforge.online.card_bank import ACTIVE, QUARANTINED
 from reforge.online.decision import CriticUnavailable
 from reforge.online.loop import LoopConfig, OnlineLoop, Trajectory
 from reforge.online.loop_log import LoopEventLog
@@ -29,6 +29,8 @@ SCEN = {
     "infiagent:q1": {"cold": 1.5, "warm": 1.5, "verdict": "cheap"},
     "infiagent:q2": {"cold": 3.0, "warm": 3.0, "verdict": "residual_abstain"},
     "csv:c1": {"cold": 5.0, "warm": 5.0, "verdict": "residual_ok"},
+    "trap:crit1": {"cold": 9.0, "warm": 4.0, "verdict": "residual_wrong"},  # critic confirms → active card
+    "trap:crit2": {"cold": 8.0, "warm": 3.0, "verdict": "residual_wrong"},
 }
 
 
@@ -79,6 +81,8 @@ class FakeVerifier:
             return {"verdict": "abstain", "error": "token budget reached", "budget_exhausted": True}
         kind = SCEN[task.id]["verdict"]
         v = {"residual_abstain": "abstain", "residual_ok": "ok"}.get(kind, "ok")
+        if kind == "residual_wrong" and traj.printed == SCEN[task.id]["cold"]:
+            v = "wrong"
         return {"verdict": v, "confidence": 0.9, "suspect": "", "evidence": "", "total_tokens": 50,
                 "printed": traj.printed}
 
@@ -104,7 +108,8 @@ def _gold(v):
     return numeric_gold(lambda: v, 0.01)
 
 
-GOLDS = {"trap:footer": 10.0, "trap:dupes": 6.0, "infiagent:q1": 1.5, "infiagent:q2": 3.0, "csv:c1": 5.0}
+GOLDS = {"trap:footer": 10.0, "trap:dupes": 6.0, "infiagent:q1": 1.5, "infiagent:q2": 3.0, "csv:c1": 5.0,
+         "trap:crit1": 4.0, "trap:crit2": 3.0}
 
 
 def _stream(ids, poison=False):
@@ -113,22 +118,31 @@ def _stream(ids, poison=False):
     return [(_spec(t), GoldRef(boom) if poison else _gold(GOLDS[t])) for t in ids]
 
 
-def test_confident_fail_learns_and_retries_once(tmp_path):
+def test_cheap_tier_failure_mints_quarantined_card_scoped_to_its_task(tmp_path):
     loop = _loop(tmp_path)
     s = loop.run(_stream(["trap:footer"]))
-    log = loop.log
-    v = [e.payload for e in log.events("VERDICT")]
+    v = [e.payload for e in loop.log.events("VERDICT")]
     # trap stream audits at 1.0, so attempt 2's cheap pass goes to the critic
     assert [(x["attempt"], x["label"], x["tier"], x["audited"]) for x in v] == [
         (1, "fail", "L1b", False), (2, "pass", "critic", True)]
-    card = loop.bank.by_status(ACTIVE)[0]
+    assert loop.bank.by_status(ACTIVE) == []
+    card, = loop.bank.by_status(QUARANTINED)
     assert card.source_task_id == "trap:footer" and card.verifier_tier == "L1b" and card.signals == ("footer",)
+    assert loop.log.events("CARD_ADMITTED")[0].payload["reasons"] == ["cheap_tier_only:L1b"]
     assert card.provenance and v[1]["card_ids"] == [card.card_id]
-    assert loop.agent.calls == [("trap:footer", []), ("trap:footer", [card.card_id])]
-    assert s["retries"] == 1 and s["cards_admitted_active"] == 1 and s["critic_calls"] == 1   # audit on attempt 2
+    assert loop.agent.calls == [("trap:footer", []), ("trap:footer", [card.card_id])]   # own retry only
+    assert s["retries"] == 1 and s["cards_admitted_quarantined"] == 1 and s["critic_calls"] == 1
     rows = loop.shadow.rows()
     assert [(r["attempt"], r["answer_correct"], r["label_correct"]) for r in rows] == [(1, False, True), (2, True, True)]
     assert loop.bank.used_by(card.card_id)[0]["attempt"] == 2
+
+
+def test_critic_confirmed_failure_mints_active_card(tmp_path):
+    loop = _loop(tmp_path)
+    loop.run(_stream(["trap:crit1"]))
+    card, = loop.bank.by_status(ACTIVE)
+    assert card.verifier_tier == "critic" and card.critic_confidence == 0.9
+    assert loop.log.events("CARD_ADMITTED")[0].payload["reasons"] == []
 
 
 def test_uncertain_goes_to_review_without_card_or_retry(tmp_path):
@@ -150,15 +164,42 @@ def test_confident_pass_no_retry(tmp_path):
     assert s["final_label"] == {"pass": 1} and s["retries"] == 0
 
 
-def test_recall_carries_card_to_next_task(tmp_path):
+JOIN_CARD = {"title": "关联前统一键格式", "description": "两表按键关联后再聚合的任务。",
+             "content": "- 关联前去掉键两端空格并统一大小写。\n- 关联后对比行数,确认没有丢行或翻倍。",
+             "polarity": "failure", "violations": []}
+
+
+class PerTaskDistiller(FakeDistiller):
+    def distill(self, traj, feedback, forbidden_terms):
+        body, tok = super().distill(traj, feedback, forbidden_terms)
+        return (dict(JOIN_CARD) if "crit" in traj.code_tail else body), tok
+
+
+def test_active_card_recalled_by_next_task_quarantined_one_not(tmp_path):
+    loop = _loop(tmp_path, distiller=PerTaskDistiller())
+    loop.run(_stream(["trap:footer", "trap:crit1", "trap:crit2"]))
+    q, = loop.bank.by_status(QUARANTINED)
+    act, = loop.bank.by_status(ACTIVE)
+    assert q.source_task_id == "trap:footer" and act.source_task_id == "trap:crit1"
+    by_task = [c for t, c in loop.agent.calls if t == "trap:crit1"]
+    assert by_task[0] == []                                  # footer's quarantined card never reached crit1
+    assert [c for t, c in loop.agent.calls if t == "trap:crit2"][0] == [act.card_id]
+
+
+def test_reobservation_counts_but_never_promotes(tmp_path):
     loop = _loop(tmp_path)
     loop.run(_stream(["trap:footer", "trap:dupes"]))
-    # dupes attempt 1 recalls the footer card (same signal + similar request)
-    calls = dict((i, c) for i, c in enumerate(loop.agent.calls))
-    card = loop.bank.cards()
-    assert calls[2][0] == "trap:dupes" and calls[2][1] == [next(iter(card))]
-    # dupes then fails confidently and distils a near-duplicate → observation, promotion path, no 2nd card
-    assert len(card) == 1 and len(loop.log.events("CARD_OBSERVED")) == 1
+    q = next(iter(loop.bank.cards()))
+    c = loop.bank.get(q)
+    assert c.status == QUARANTINED and c.observers == ("trap:footer", "trap:dupes")
+    assert loop.log.events("CARD_PROMOTED") == []
+    rev = [e.payload for e in loop.log.events("REVIEW_ENQUEUED")]
+    assert [(r["reason"], r["card_id"]) for r in rev] == [("card_reobserved", q)]
+    # dupes may not borrow footer's quarantined card for its retry → no retry, reason logged
+    assert [c for t, c in loop.agent.calls if t == "trap:dupes"] == [[]]
+    commit = [e for e in loop.log.events("TASK_COMMITTED") if e.task_id == "trap:dupes"][0].payload
+    assert commit["retry_skipped"] == f"quarantined_card_of_other_task:{q}"
+    assert loop.bank.promote(q).status == ACTIVE                       # manual is the only way up
 
 
 def test_poisoned_gold_changes_no_decision(tmp_path):
@@ -244,24 +285,13 @@ def test_hard_rejected_card_means_no_retry(tmp_path):
     assert s["cards_rejected"] == 1 and s["retries"] == 0
 
 
-def test_gate_soft_fail_quarantines_but_still_scopes_retry(tmp_path):
+def test_gate_soft_fail_quarantines_even_critic_confirmed(tmp_path):
     loop = _loop(tmp_path, distiller=FakeDistiller(body=VAGUE_CARD))
-    s = loop.run(_stream(["trap:footer", "csv:c1"]))
+    s = loop.run(_stream(["trap:crit1", "csv:c1"]))
     assert s["cards_admitted_quarantined"] == 1 and s["bank_active"] == 0
     q = next(iter(loop.bank.cards()))
-    assert loop.agent.calls == [("trap:footer", []), ("trap:footer", [q]),    # retry of the source task only
+    assert loop.agent.calls == [("trap:crit1", []), ("trap:crit1", [q]),      # retry of the source task only
                                 ("csv:c1", [])]                               # never injected elsewhere
-
-
-def test_quarantined_card_promoted_by_second_task(tmp_path):
-    loop = _loop(tmp_path, distiller=FakeDistiller(body=VAGUE_CARD))
-    loop.run(_stream(["trap:footer"]))
-    q = next(iter(loop.bank.cards()))
-    assert loop.bank.get(q).status == "quarantined"     # the source task's own retry did not promote it
-    loop.run(_stream(["trap:dupes"]))
-    c = loop.bank.get(q)
-    assert c.status == ACTIVE and c.observers == ("trap:footer", "trap:dupes")
-    assert loop.log.events("CARD_PROMOTED")[0].payload["reason"] == "repeated_observation:2_tasks"
 
 
 def test_critic_budget_exhaustion_stops_without_commit(tmp_path):

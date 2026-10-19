@@ -151,3 +151,13 @@ def test_calibration_bins():
             {"critic_conf": None, "critic_verdict_correct": True}]
     bins = {(b["lo"], b["n"]): b["accuracy"] for b in shadow.calibration(rows)}
     assert bins[(0.85, 2)] == 0.5 and bins[(0.0, 1)] == 1.0
+
+
+def test_calibration_by_tier():
+    rows = [{"tier": "L1b", "confidence": 0.95, "label_correct": True},
+            {"tier": "L1b", "confidence": 0.95, "label_correct": False},
+            {"tier": "critic", "confidence": 0.9, "label_correct": True},
+            {"tier": "cheap", "confidence": 0.4, "label_correct": None}]          # unverified: no claim
+    t = shadow.calibration_by_tier(rows)
+    assert t == {"L1b": {"n": 2, "accuracy": 0.5, "mean_conf": 0.95},
+                 "critic": {"n": 1, "accuracy": 1.0, "mean_conf": 0.9}}

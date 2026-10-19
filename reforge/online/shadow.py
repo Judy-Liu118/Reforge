@@ -11,7 +11,12 @@ Per attempt row:
     critic_verdict / critic_conf / critic_verdict_correct
                            the critic's own call, kept even when the loop
                            discarded it as below τ — this pair is what the
-                           calibration curve is drawn from
+                           critic calibration curve is drawn from
+    tier / confidence      the tier that decided and the confidence it
+                           assigned (L1b 0.95, L0 1.0, critic self-report);
+                           paired with label_correct per tier. L1b's 0.95 was
+                           measured on the trap corpus only — this pairing is
+                           how its behaviour on natural data gets measured
 """
 
 from __future__ import annotations
@@ -102,3 +107,21 @@ def calibration(rows: list[dict], edges: tuple[float, ...] = (0.0, 0.5, 0.7, 0.8
                     "accuracy": (sum(b) / len(b)) if b else None,
                     "mean_conf": (sum(conf for conf, _ in pts if lo <= conf < hi) / len(b)) if b else None})
     return out
+
+
+def calibration_by_tier(rows: list[dict]) -> dict[str, dict]:
+    """Per deciding tier: (assigned confidence, did the pass/fail claim match gold).
+
+    Only claims (pass/fail); unverified / uncertain make none. `mean_conf` vs
+    `accuracy` is the calibration gap for that tier.
+    """
+    out: dict[str, dict] = {}
+    for r in rows:
+        if r.get("label_correct") is None or not isinstance(r.get("confidence"), (int, float)):
+            continue
+        b = out.setdefault(r.get("tier") or "?", {"n": 0, "correct": 0, "conf_sum": 0.0})
+        b["n"] += 1
+        b["correct"] += bool(r["label_correct"])
+        b["conf_sum"] += r["confidence"]
+    return {t: {"n": b["n"], "accuracy": round(b["correct"] / b["n"], 4),
+                "mean_conf": round(b["conf_sum"] / b["n"], 4)} for t, b in out.items()}

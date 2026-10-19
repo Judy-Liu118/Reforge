@@ -63,18 +63,18 @@ def test_recall_filters_status_and_threshold(tmp_path):
     assert [c.card_id for c, _ in bank.recall(weak, ["footer"], min_score=0.3)] == ["on"]
 
 
-def test_promotion_needs_two_distinct_tasks(tmp_path):
+def test_observation_accumulates_never_promotes(tmp_path):
     log = LoopEventLog(tmp_path / "e.jsonl")
     bank = CardBank(log)
     bank.admit(_card("q", status=QUARANTINED), task_id="t1", try_id="A")
-    # the source task re-observing (e.g. its own retry) does not count
-    assert bank.observe("q", task_id="t1", try_id="A").status == QUARANTINED
+    assert bank.observe("q", task_id="t1", try_id="A").observers == ("t1",)   # same task: no new observer
     _commit(log, "t1", "A")
-    c = bank.observe("q", task_id="t2", try_id="B")
-    assert c.status == ACTIVE and c.observers == ("t1", "t2")
-    assert bank.get("q").status == QUARANTINED              # B not committed yet
-    _commit(log, "t2", "B")
-    assert bank.get("q").status == ACTIVE
+    for i, tr in ((2, "B"), (3, "C")):
+        bank.observe("q", task_id=f"t{i}", try_id=tr)
+        _commit(log, f"t{i}", tr)
+    c = bank.get("q")
+    assert c.status == QUARANTINED and c.observers == ("t1", "t2", "t3")
+    assert log.events("CARD_PROMOTED") == []
 
 
 def test_manual_promote_and_evict(tmp_path):
@@ -88,6 +88,7 @@ def test_manual_promote_and_evict(tmp_path):
     v_before = bank.version()
     c = bank.evict("q", "canary regression")
     assert c.status == EVICTED and c.history[-1]["reason"] == "canary regression"
+    assert log.events("CARD_EVICTED")[0].payload["used_by"] == []
     assert bank.recall("读取 insurance.csv,计算 charges 列的总和") == []
     assert bank.version() != v_before
     with pytest.raises(ValueError):

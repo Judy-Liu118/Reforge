@@ -52,11 +52,14 @@ def summarize(log: LoopEventLog, bank: CardBank) -> dict:
                                                  if e.payload["label"] == "uncertain")),
         "audits": sum(bool(e.payload.get("audited")) for e in verdicts),
         "review_queue": len(log.events("REVIEW_ENQUEUED")),
+        "review_reasons": dict(Counter(e.payload.get("reason") for e in log.events("REVIEW_ENQUEUED"))),
         "cards_admitted_active": admitted.get(ACTIVE, 0),
         "cards_admitted_quarantined": admitted.get(QUARANTINED, 0),
+        "quarantine_reasons": dict(Counter(r.split(":")[0] for e in log.events("CARD_ADMITTED")
+                                           for r in e.payload.get("reasons", []))),
         "cards_rejected": card_ev["CARD_REJECTED"],
         "cards_observed": card_ev["CARD_OBSERVED"],
-        "cards_promoted": card_ev["CARD_PROMOTED"],
+        "cards_promoted": card_ev["CARD_PROMOTED"],          # manual only
         "cards_evicted": card_ev["CARD_EVICTED"],
         "bank_active": sum(c.status == ACTIVE for c in cards.values()),
         "bank_quarantined": sum(c.status == QUARANTINED for c in cards.values()),

@@ -6,9 +6,11 @@ Per task (one `try_id`; every event below carries it, TASK_COMMITTED last):
                 floor) → agent → cheap tiers → critic if needed → VERDICT
     confident fail
                 distil a card from the verifier's own diagnosis → dedupe →
-                quality gate → active | quarantined | rejected; then retry
-                ONCE with that card injected (scoped to this task even if
-                quarantined — quarantine means "not injected elsewhere").
+                quality gate → active (critic-confirmed only) | quarantined
+                (cheap-tier-only, gate soft fail, borderline) | rejected;
+                then retry ONCE with that card injected. A quarantined card
+                is injected only into its own source task, so a near-
+                duplicate of another task's quarantined card means no retry.
                 Attempt 2 is judged and logged; it distils nothing.
     confident pass / unverified
                 done, no retry
@@ -170,11 +172,14 @@ class OnlineLoop:
         work = self.root / "work" / try_id
         try:
             a1 = self._attempt(spec, try_id, 1, work)
-            attempts, cards = [a1], []
-            v = a1.verdict
-            if v.confident_fail:
+            attempts, cards, retry_skipped = [a1], [], ""
+            if a1.verdict.confident_fail:
                 card = self._learn(spec, try_id, a1)
-                if card is not None:
+                if card is None:
+                    retry_skipped = "no_card"
+                elif not self._injectable(card, spec.id):
+                    retry_skipped = f"quarantined_card_of_other_task:{card.card_id}"
+                else:
                     cards.append(card.card_id)
                     if self.cfg.retry_on_confident_fail:
                         attempts.append(self._attempt(spec, try_id, 2, work, override=card))
@@ -185,7 +190,8 @@ class OnlineLoop:
                                     critic_conf=a.verdict.critic_conf)
             last = attempts[-1].verdict
             self.log.append("TASK_COMMITTED", **T, source=spec.source, final_label=last.label,
-                            final_confidence=last.confidence, attempts=len(attempts), cards=cards)
+                            final_confidence=last.confidence, attempts=len(attempts), cards=cards,
+                            retry_skipped=retry_skipped)
         finally:
             if not self.cfg.keep_work:
                 shutil.rmtree(work, ignore_errors=True)
@@ -237,12 +243,23 @@ class OnlineLoop:
             if dup.status == EVICTED:
                 self.bank.reject(body, [f"duplicate_of_evicted:{dup.card_id}"], **T, distill_tokens=tokens)
                 return None
-            return self.bank.observe(dup.card_id, **T, distill_tokens=tokens)
+            # counted, never promoted on: a repeated cheap-tier bias looks the same as corroboration
+            c = self.bank.observe(dup.card_id, **T, distill_tokens=tokens)
+            self.log.append("REVIEW_ENQUEUED", **T, attempt=a.n, run_id=a.run_id, reason="card_reobserved",
+                            card_id=c.card_id, card_status=c.status, observers=list(c.observers))
+            return c
         g = card_gate.check(body, forbidden_terms=traj.forbidden_terms)
         if g.hard_reject:
             self.bank.reject(body, list(g.reasons), **T, distill_tokens=tokens)
             return None
-        reasons = list(g.reasons) + (["borderline_conf"] if v.borderline else [])
+        # Minting rule: active only on a critic-confirmed failure; a cheap-tier-only
+        # failure (L0 / L1b) is quarantined — L1b's 0.95 holds on the trap corpus
+        # it was measured on, not on natural data (smoke: da0024 false alarm).
+        reasons = list(g.reasons)
+        if not v.tier.startswith("critic"):
+            reasons.append(f"cheap_tier_only:{v.tier}")
+        if v.borderline:
+            reasons.append("borderline_conf")
         card = Card(
             card_id=uuid.uuid4().hex[:10], body=body, source_task_id=spec.id, source_run_id=a.run_id,
             source_request=spec.request, created_at=datetime.now(timezone.utc).isoformat(),
@@ -252,6 +269,11 @@ class OnlineLoop:
                                        self.verifier.sha, self.distiller.model),
             status=QUARANTINED if reasons else ACTIVE)
         return self.bank.admit(card, **T, reasons=reasons, distill_tokens=tokens)
+
+    @staticmethod
+    def _injectable(card: Card, task_id: str) -> bool:
+        """Active cards go anywhere; a quarantined card only into its own source task."""
+        return card.status == ACTIVE or (card.status == QUARANTINED and card.source_task_id == task_id)
 
     # -- shadow (after commit) -------------------------------------------------------
 
