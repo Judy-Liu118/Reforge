@@ -46,9 +46,11 @@ def llm(model: str, messages: list[dict], thinking: bool = False) -> tuple[str, 
 
 class AppWorldAgent:
     def __init__(self, client: AppWorldClient, model: str = "qwen3.8-27b", cards: list[dict] | None = None,
-                 max_steps: int = 30, keep_outputs: int = 4, out_chars: int = 3000, thinking: bool = False) -> None:
+                 max_steps: int = 30, keep_outputs: int = 4, out_chars: int = 3000, thinking: bool = False,
+                 token_cap: int | None = None) -> None:
         self.client, self.model, self.cards, self.thinking = client, model, list(cards or []), thinking
         self.max_steps, self.keep_outputs, self.out_chars = max_steps, keep_outputs, out_chars
+        self.token_cap = token_cap
 
     def _window(self, history: list[dict]) -> list[dict]:
         """Last keep_outputs execution outputs verbatim; older ones become a stub."""
@@ -87,6 +89,9 @@ class AppWorldAgent:
                         {"role": "user", "content": "Output:\n" + output[:self.out_chars], "_obs": True}]
             if self.client.task_completed(task_id):
                 status, done_step = "completed", step
+                break
+            if self.token_cap and tok_p + tok_c >= self.token_cap:
+                status = "token_cap"
                 break
         return {"task_id": task_id, "instruction": info["instruction"], "status": status, "steps": step,
                 "done_step": done_step, "prompt_tokens": tok_p, "completion_tokens": tok_c,

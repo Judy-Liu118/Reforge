@@ -168,3 +168,85 @@ class CardBank:
 
     def recall(self, scope: str = "appworld") -> list[dict]:
         return [c for c in self.cards if c["scope"] == scope]
+
+
+# ---- login convention (L0: the login call itself raises) ------------------------------------
+
+def login_failures(steps_path: Path) -> list[dict]:
+    """Steps of a recorded episode where a login(...) call raised — the source failure for an L card."""
+    out = []
+    for line in steps_path.read_text(encoding="utf-8").splitlines():
+        x = json.loads(line)
+        m = re.search(r"apis\.(\w+)\.login\((\w+)=", x["code"])
+        if m and x["output"].startswith("Execution failed"):
+            out.append({"step": x["step"], "app": m.group(1), "param": m.group(2)})
+    return out
+
+
+_LOGIN_PROBE = r"""import json
+_prof = apis.supervisor.show_profile()
+_pw = {{a["account_name"]: a["password"] for a in apis.supervisor.show_account_passwords()}}
+_res = {{}}
+for _label, _kw in [("email=<account email>", {{"email": _prof["email"]}}),
+                    ("username=<account email>", {{"username": _prof["email"]}}),
+                    ("username=<phone number>", {{"username": _prof["phone_number"]}})]:
+    try:
+        apis.{app}.login(password=_pw["{app}"], **_kw)
+        _res[_label] = "ok"
+    except Exception as _e:
+        _m = re.search(r"status code is (\d+)", str(_e))
+        _res[_label] = "error " + (_m.group(1) if _m else type(_e).__name__)
+print(json.dumps(_res))"""
+
+
+def verify_login(client: AppWorldClient, task_id: str, app: str, experiment: str) -> dict | None:
+    """Replay three identity forms in a fresh world; keep values out of the evidence (labels only)."""
+    client.initialize(task_id, experiment, timeout_seconds=None)
+    try:
+        out = client.execute(task_id, "import re\n" + _LOGIN_PROBE.format(app=app))
+    finally:
+        client.close(task_id)
+    try:
+        res = json.loads(out.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    if any(v == "ok" for v in res.values()) and any(v != "ok" for v in res.values()):
+        return {"kind": "login", "app": app, "results": res}
+    return None
+
+
+LOGIN_PROMPT = """An agent works in a simulated world of apps through Python API calls (apis.<app>.login(...) etc.).
+In past episodes its login calls failed. A verifier replayed the login API with different identity arguments
+(values redacted) and observed:
+{evidence}
+Write ONE reusable constraint card that prevents this class of mistake in any future task in this environment.
+Rules: state which parameter name carries the identity and what value goes in it, including any app whose identity
+value differs; do not include any concrete email, phone number, password or id; state what to do, not code.
+Return JSON only: {{"trigger": "<when the card applies>", "guardrail": "<what to do>"}}"""
+
+
+def distill_login(evidence: list[dict], model: str | None = None) -> tuple[dict | None, list[dict]]:
+    from openai import OpenAI
+
+    banned = {e["api"] for e in paginated_endpoints()}
+    c = OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.environ["LLM_API_KEY"], timeout=300)
+    model = model or os.environ["LLM_MODEL"]
+    prompt = LOGIN_PROMPT.format(evidence=json.dumps(evidence, indent=1))
+    attempts = []
+    for _ in range(2):
+        r = c.chat.completions.create(model=model, temperature=0, messages=[{"role": "user", "content": prompt}])
+        raw = r.choices[0].message.content or ""
+        m = re.search(r"\{.*\}", raw, flags=re.S)
+        try:
+            card = json.loads(m.group(0)) if m else {}
+        except ValueError:
+            card = {}
+        bad = _lint(card, banned, {"username"})
+        text = f"{card.get('trigger', '')} {card.get('guardrail', '')}"
+        if re.search(r"@|\d{6,}", text):
+            bad.append("<concrete identity value>")
+        attempts.append({"raw": raw, "lint": bad, "prompt_tokens": r.usage.prompt_tokens,
+                         "completion_tokens": r.usage.completion_tokens})
+        if not bad:
+            return {"trigger": card["trigger"], "guardrail": card["guardrail"]}, attempts
+    return None, attempts
