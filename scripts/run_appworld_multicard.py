@@ -3,6 +3,7 @@
     python scripts/run_appworld_multicard.py --step bank        # mint L (gold-free), assemble P/L/D1/D2
     python scripts/run_appworld_multicard.py --step preflight   # theta from the D1 null + recall on targets (0 LLM tokens)
     python scripts/run_appworld_multicard.py --step arms        # none / retrieval per target, budget-guarded
+    python scripts/run_appworld_multicard.py --step scope       # v2: none / scope-injected conventions (prereg v2)
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ OUT = _ROOT / "runs" / "appworld_multicard"
 GATE = _ROOT / "runs" / "appworld_gate"
 EXPERIMENT = "reforge_multicard"
 TARGETS = ["287e338_1", "82e2fac_2"]
+SCOPE_TARGETS = ["07b42fd_2", "c901732_3"]                  # prereg v2: L cross-scenario
 K, BATCH_BUDGET, EPISODE_CAP = 2, 120_000, 45_000
 LOGIN_SOURCES = [("cf6abd2_2", "simple_note"), ("302c169_2", "phone")]
 D1 = {"id": "D1", "role": "distractor", "apps": ["venmo"],
@@ -140,9 +142,30 @@ def step_arms(client: AppWorldClient) -> None:
                               "login_errors": m["login_error_steps"]}, ensure_ascii=False), flush=True)
 
 
+def step_scope(client: AppWorldClient) -> None:
+    bank = [c for c in json.loads((OUT / "bank.json").read_text(encoding="utf-8")) if c["id"] != "D2"]
+    spent = 0
+    for t in SCOPE_TARGETS:
+        cards = appworld_recall.scope_recall(_instruction(t), bank)
+        info = {"layer": "scope", "apps": sorted(appworld_recall.apps_in(_instruction(t))),
+                "injected": [c["id"] for c in cards], "not_injected": [c["id"] for c in bank if c not in cards]}
+        for arm in ("none", "scope"):
+            if spent + EPISODE_CAP > BATCH_BUDGET:
+                print(f"budget guard: spent {spent}, next episode could exceed {BATCH_BUDGET} — stop", flush=True)
+                return
+            r = run_arm(arm, t, cards if arm == "scope" else [], client, info if arm == "scope" else None)
+            spent += r["prompt_tokens"] + r["completion_tokens"]
+            m = r["markers"]
+            print(json.dumps({"arm": arm, "task": t, "injected": r["injected"], "status": r["status"],
+                              "done_step": r["done_step"], "success": r["success"],
+                              "tokens": r["prompt_tokens"] + r["completion_tokens"], "spent": spent,
+                              "beyond_page0": m["read_beyond_page0"], "first_login": m["first_login"],
+                              "login_errors": m["login_error_steps"]}, ensure_ascii=False), flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--step", required=True, choices=["bank", "preflight", "arms"])
+    ap.add_argument("--step", required=True, choices=["bank", "preflight", "arms", "scope"])
     args = ap.parse_args()
     from dotenv import load_dotenv
     load_dotenv(_ROOT / ".env")
@@ -151,7 +174,7 @@ def main() -> None:
         step_preflight()
         return
     client = AppWorldClient()
-    step_bank(client) if args.step == "bank" else step_arms(client)
+    {"bank": step_bank, "arms": step_arms, "scope": step_scope}[args.step](client)
 
 
 if __name__ == "__main__":

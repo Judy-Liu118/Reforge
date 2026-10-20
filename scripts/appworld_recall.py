@@ -37,3 +37,10 @@ def recall(enc: Encoder, instruction: str, cards: list[dict], theta: float, k: i
     ok = sorted([r for r in rows if r["passes_filter"] and r["sim"] >= theta], key=lambda r: -r["sim"])[:k]
     chosen = {r["id"] for r in ok}
     return [c for c in cards if c["id"] in chosen], rows
+
+
+def scope_recall(instruction: str, cards: list[dict]) -> list[dict]:
+    """Layer 1 (app / environment conventions): no embedding. A card with no app scope applies everywhere;
+    an app-scoped card applies only when the instruction names one of its apps."""
+    mentioned = apps_in(instruction)
+    return [c for c in cards if not c.get("apps") or bool(set(c["apps"]) & mentioned)]
