@@ -5,7 +5,7 @@ environment; Reforge talks to it over HTTP. The server holds ONE task world at a
 time — tasks run sequentially.
 
 Control-side only: initialize / execute / task_completed / close. Scoring
-(`/evaluate`, hidden state-based tests = gold) lives in appworld_gold.py and is
+(the evaluate endpoint, hidden state-based tests = gold) lives in appworld_gold.py and is
 never imported by anything that decides what the agent does.
 """
 
