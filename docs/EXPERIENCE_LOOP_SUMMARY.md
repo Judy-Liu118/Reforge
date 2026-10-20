@@ -1,0 +1,70 @@
+# Learning from failure without gold — project summary (2026-10)
+
+What was built and measured in the "learn from failure" track of Reforge.
+
+**License and scope note.** This document contains methods, aggregate numbers and conclusions only. It does
+not include AppWorld task content, instructions, answers or traces: the AppWorld bundle license asks that
+they not be published in plain text, so they stay under the git-ignored `runs/`. Numbers marked n=1 are
+demonstration traces, not statistical claims.
+
+## 1. What was built
+
+| Piece | What it does | Where |
+|---|---|---|
+| Verifier ladder | **L0**: the execution itself (exit code / traceback). **L1**: static probes on data and output. **L1b**: metamorphic re-run (repair the input, re-run the code, see whether the output changes). **L2**: LLM critic. Cheap tiers run first; the critic only where they are blind | `scripts/run_verifier_ladder.py` (branch `exp/verifier-ladder`), `scripts/online_verifier.py` |
+| Online gold-free loop | Task stream → verifier verdict → card mint / recall → retry. Gold lives only in `shadow.py`, behind an opaque `GoldRef`; an AST test keeps it out of every control module | `reforge/online/` |
+| Experience cards | One atomic constraint per card: `{trigger, guardrail}`, rendered into the prompt as reasoning guidance (not code, not spliced into outputs) | `reforge/experience/` |
+| Cheap probes for silent errors | Pagination: the agent finished, a list read's last page was full, and a read-only re-call shows the next page is non-empty. Login identity: a login call raised (L0), and a replay of identity forms shows which one works | `reforge/experience/probes.py` |
+| Layered recall | Layer 1: app / environment convention cards by scope, no embedding. Layer 2: task-level cards via a plug-in retriever, admitted only through the verifier gate; **unsolved**, default returns nothing | `reforge/experience/recall.py` |
+| Safety rails | Verifier-gated admit → quarantine → paired canary → promote; eviction with a `used_by` snapshot; feature flag off by default | `reforge/experience/store.py`, `loop.py` |
+| Event logs | Every agent step (code + output + tokens) goes to `steps.jsonl`. Every card event (admitted / rejected / recalled / canary / promoted / evicted) goes to the append-only loop log; card state is a projection of it | `reforge/online/loop_log.py`, `runs/` |
+
+## 2. What was shown
+
+### Hero trace — pagination silent error, same scenario (AppWorld, qwen3.8-27b, temperature 0)
+1. A real episode answered wrongly after reading only the first page of a paginated search. The probe flagged it. The verifier re-read the next page in a fresh world and found 5 more items, confirming the failure. Gold took no part.
+2. A distiller (deepseek) produced the card from the redacted evidence alone. The gate required the default page size and `page_index`, and the card passed on the first try:
+   *"When a paginated call returns exactly page_limit (default 5) items → do not aggregate yet; keep requesting page_index+1 until a call returns fewer than page_limit items."*
+3. The card was recalled on two other tasks of the same scenario (different entity, different min/max direction):
+
+| arm | runs | correct | read past page 0 |
+|---|---|---|---|
+| no card | 2 | 0 | 0 |
+| near-miss card ("10 per page, one call is enough") | 1 | 0 | 0 |
+| card, no thinking | 2 | **2** | 2 |
+| card, thinking | 2 | **2** | 2 |
+
+Overall the card fixed **4/4 runs**. In every one of them, the agent's own comments repeat the card's checkable condition before it requests the next page.
+
+**Earlier attempt.** The abstract version of the same card ("do not treat the first page as complete; read every page") left behaviour unchanged (1/1 identical to no card). The concrete anchor is what made it work.
+
+### Cross-scenario login card — behavioural transfer, n=1
+A login card was minted from two real login failures in other apps, verified by replaying three identity forms. On a different scenario (a state-changing task):
+- With the card, the first login used the right parameter, with zero login errors.
+- Without the card, the agent used the wrong parameter, got an error, read the docs and retried.
+
+Both arms then ran out of the per-episode token cap before finishing the task, so **the outcome did not flip**. The remaining blockers were conventions that had no card yet.
+
+## 3. Findings and limitations
+
+1. **Pure semantic retrieval used the wrong key.** We embedded the task instruction and compared it with the card trigger (bge-m3, threshold = 95th percentile of an unrelated card's similarity on unrelated instructions).
+   - The useful cards' triggers describe runtime events, which instructions never mention. Over 90 train instructions, all of which need login and 73% of which need pagination, the pagination card cleared the threshold on **4/90** and the login card on **1/90**.
+   - A near-miss pagination card written in task language cleared it on **46/90**.
+   - Semantic retrieval is biased toward cards that *sound like a task description*, and those are not necessarily correct. This is one argument for verifier-gated admission.
+   - An earlier CSV-loop measurement agrees: request-text similarity reached top-1 same-root-cause precision of only 1/21.
+2. **General cards have a step cost on tasks that don't need them (when-to-recall).** The env-wide pagination card, injected into a task where one page was enough, triggered four extra verification searches and delayed the actual work by 2 steps (n=1).
+3. **Multi-convention tasks need several cards working together.** On the baseline agent, 9/10 tasks hit "pass the access token explicitly", 9/10 wasted steps on unprinted results, and 4/10 used the wrong login parameter. A zero-token replay showed that fixing all conventions together flips 6/6 candidate tasks; fixing one convention is not enough.
+4. **Card compliance depends on the model and on the phrasing** (a Faithful-Self-Evolvers effect). A 27b agent ignored an abstract card and followed a concrete, checkable one. Earlier BIRD experiments with SQL guardrail lessons barely moved behaviour: +0.07, CI crosses zero.
+5. **Other measured bounds from this track:**
+   - Verifier ladder:
+     - On known contamination types, the static probes catch most errors (recall 0.84).
+     - On held-out, unseen types, recall is 4/28 for the probes vs 28/28 for the critic.
+     - On real tables, the critic has a 6.5% false-positive rate and 61% recall.
+   - Learning-loop ablation: the diagnostic content of the feedback drives the gain (+0.33 [+0.17, +0.50]). Judge noise costs +0.07 and crosses zero.
+   - BIRD fact memory: NO-GO. Recalled near-facts mislead (−0.10); constraint rewriting hurt (−0.17).
+
+## 4. Future work
+- **Task-level precise retrieval.** Match on runtime events (step code / output) rather than instruction text, or on a distilled "applies-to" field. Audit precision offline on recorded traces before any agent run.
+- **Card compliance.** Measure it per model, and compare phrasing (abstract vs anchored) at larger n.
+- **On-demand recall.** Inject a convention card when its trigger fires (e.g. a list call returned exactly `page_limit` items), not up front. This addresses the step cost in finding 2.
+- **More convention probes.** Access-token passing and finishing non-question tasks recurred in the baseline and have real failures available to mint from.

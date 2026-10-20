@@ -186,6 +186,33 @@ reforge "..."
 
 ---
 
+## 经验闭环：不用 gold 从失败中学(默认关闭)
+
+`reforge/experience/` 把 agent 自己经验证确认的失败蒸成原子**约束卡** `{trigger, guardrail}`,交给后续任务。
+默认关闭(`REFORGE_EXPERIENCE_CARDS=1` 开启),在卡库经过金丝雀之前挂上它不会改变任何行为。
+
+```
+失败(如只读第 0 页就作答)
+  → 探针    便宜、无 gold:列表最后读到的一页是满的,且 agent 已收尾
+  → 验证器  无 gold 复核:只读重查下一页非空
+  → 蒸卡    脱敏证据 → 一张卡;确定性 gate 要求写出具体锚点
+  → 入库    QUARANTINED(尚不召回)
+  → 金丝雀  有卡 / 无卡配对;无回退且 treated ≥ control → promote
+  → 召回    按 scope:app / 环境约定卡发给其覆盖的所有任务(不走 embedding)
+  → 应用    作为推理指引渲染进 prompt(不是代码)
+  → 预防    下一题读全所有页;每次召回入日志(used_by),出现回退 → evict
+```
+
+AppWorld 上的实测结果(qwen3.8-27b):
+- **同场景**:这样蒸出的翻页卡修好了 4/4 个静默错回合;无卡时 0/2 答对。
+- **跨场景**:登录卡在行为层面迁移成功(n=1)。
+- **检索键**:"任务指令 ↔ 卡 trigger"的语义检索是错的键，所以召回改为按 scope,任务级检索只留开放接口。
+
+组件文档见 [`reforge/experience/README.md`](reforge/experience/README.md);总结与局限见
+[`docs/EXPERIENCE_LOOP_SUMMARY.md`](docs/EXPERIENCE_LOOP_SUMMARY.md)。
+
+---
+
 ## 架构
 
 四个运行时层，各自拥有一个子状态和一条硬性职责边界：

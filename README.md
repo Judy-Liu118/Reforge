@@ -199,6 +199,35 @@ The runtime is exercised on real tasks, each with a reproducible report under
 
 ---
 
+## Experience loop: learning from failure without gold (opt-in)
+
+`reforge/experience/` turns an agent's own verified failures into atomic
+**constraint cards** `{trigger, guardrail}` and hands them to later tasks.
+It is off by default (`REFORGE_EXPERIENCE_CARDS=1` turns it on), so attaching
+it changes nothing until a canaried bank exists.
+
+```
+failure (e.g. answered after reading only page 0)
+  → probe       cheap, gold-free: a list read's last page was full and the agent finished
+  → verifier    gold-free re-check: a read-only re-call of the next page is non-empty
+  → distill     the redacted evidence becomes one card; the deterministic gate demands concrete anchors
+  → admit       QUARANTINED (never recalled yet)
+  → canary      paired run with / without the card; no regressions and treated ≥ control → promote
+  → recall      by scope: app / environment conventions go to every task they cover (no embedding)
+  → apply       rendered into the prompt as guidance (not code)
+  → prevent     the next task reads all pages; every recall is logged (used_by), regressions → evict
+```
+
+Measured on AppWorld with qwen3.8-27b:
+- **Same scenario**: a pagination card minted this way fixed 4/4 silent-error runs. Without it, 0/2 were correct.
+- **Different scenario**: a login card transferred at the behaviour level (n=1).
+- **Retrieval key**: embedding the task instruction against the card trigger turned out to be the wrong key, which is why recall is scope-based and task-level retrieval is an open interface.
+
+Component docs: [`reforge/experience/README.md`](reforge/experience/README.md); summary and limitations:
+[`docs/EXPERIENCE_LOOP_SUMMARY.md`](docs/EXPERIENCE_LOOP_SUMMARY.md).
+
+---
+
 ## Architecture
 
 Four runtime layers, each owning a sub-state and a hard responsibility
@@ -224,6 +253,8 @@ reforge/
 │   ├── mcp/             stdio JSON-RPC client + Skill adapter
 │   └── policy/          RetryPolicy + TaskIntent
 ├── memory/              3-layer substrate behind one Protocol (JSON / SQLite)
+├── online/              gold-free online loop: loop event log, card bank, canary, shadow (gold only here)
+├── experience/          verifier-gated constraint cards: probes · gate · store · scope recall (flag, off)
 ├── observability/       tracing + stdlib web dashboard
 ├── cli/                 single-shot + REPL
 └── benchmark/           quantitative runtime evaluation
