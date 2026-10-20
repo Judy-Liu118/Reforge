@@ -30,7 +30,7 @@ from appworld_client import AppWorldClient  # noqa: E402
 
 OUT = _ROOT / "runs" / "appworld_gate"
 EXPERIMENT = "reforge_gate"
-MAX_STEPS, KEEP_OUTPUTS, OUT_CHARS, TASK_TOKEN_CAP = 30, 8, 3000, 150_000
+MAX_STEPS, KEEP_OUTPUTS, OUT_CHARS, TASK_TOKEN_CAP = 20, 4, 1500, 150_000   # gate 0 ran 30 / 8 / 3000
 
 SYSTEM = """You are an autonomous agent completing a task on behalf of a person (the supervisor) in a world of apps.
 You act by writing Python code that runs in a persistent IPython shell; variables persist between steps.
@@ -104,7 +104,7 @@ def run_task(client: AppWorldClient, task_id: str, model: str, thinking: bool) -
     ev = appworld_gold.evaluate(client, task_id)
     client.save_logs(task_id)
     client.close(task_id)
-    rec = {"task_id": task_id, "status": status, "steps": step, "prompt_tokens": tok_p, "completion_tokens": tok_c,
+    rec = {"task_id": task_id, "cfg": f"{MAX_STEPS}/{KEEP_OUTPUTS}/{OUT_CHARS}", "status": status, "steps": step, "prompt_tokens": tok_p, "completion_tokens": tok_c,
            "seconds": round(time.time() - t0, 1), "instruction": info["instruction"],
            "success": ev.get("success"), "num_tests": ev.get("num_tests"),
            "num_failures": len(ev.get("failures", []))}
