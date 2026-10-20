@@ -34,18 +34,20 @@ def _code(text: str) -> str:
     return m[-1].strip() if m else ""
 
 
-def llm(model: str, messages: list[dict]) -> tuple[str, int, int]:
+def llm(model: str, messages: list[dict], thinking: bool = False) -> tuple[str, str, int, int]:
+    """→ (content, reasoning, prompt_tokens, completion_tokens incl. reasoning). Reasoning is logged, never fed back."""
     from openai import OpenAI
 
-    c = OpenAI(base_url=os.environ["VISION_LLM_BASE_URL"], api_key=os.environ["VISION_LLM_API_KEY"], timeout=300)
-    r = c.chat.completions.create(model=model, messages=messages, temperature=0, extra_body={"enable_thinking": False})
-    return r.choices[0].message.content or "", r.usage.prompt_tokens, r.usage.completion_tokens
+    c = OpenAI(base_url=os.environ["VISION_LLM_BASE_URL"], api_key=os.environ["VISION_LLM_API_KEY"], timeout=600)
+    r = c.chat.completions.create(model=model, messages=messages, temperature=0, extra_body={"enable_thinking": thinking})
+    m = r.choices[0].message
+    return m.content or "", getattr(m, "reasoning_content", None) or "", r.usage.prompt_tokens, r.usage.completion_tokens
 
 
 class AppWorldAgent:
     def __init__(self, client: AppWorldClient, model: str = "qwen3.8-27b", cards: list[dict] | None = None,
-                 max_steps: int = 30, keep_outputs: int = 4, out_chars: int = 3000) -> None:
-        self.client, self.model, self.cards = client, model, list(cards or [])
+                 max_steps: int = 30, keep_outputs: int = 4, out_chars: int = 3000, thinking: bool = False) -> None:
+        self.client, self.model, self.cards, self.thinking = client, model, list(cards or []), thinking
         self.max_steps, self.keep_outputs, self.out_chars = max_steps, keep_outputs, out_chars
 
     def _window(self, history: list[dict]) -> list[dict]:
@@ -73,13 +75,14 @@ class AppWorldAgent:
         tok_p = tok_c = 0
         status, done_step, t0 = "max_steps", None, time.time()
         for step in range(1, self.max_steps + 1):
-            text, p, c = llm(self.model, [{"role": "system", "content": system}] + self._window(history))
+            text, reasoning, p, c = llm(self.model, [{"role": "system", "content": system}] + self._window(history),
+                                        self.thinking)
             tok_p, tok_c = tok_p + p, tok_c + c
             code = _code(text)
             output = self.client.execute(task_id, code) if code else "No ```python``` code block found in your reply."
             with open(steps_path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"step": step, "text": text, "code": code, "output": output[:20000],
-                                     "prompt_tokens": p, "completion_tokens": c}, ensure_ascii=False) + "\n")
+                                     "reasoning": reasoning, "prompt_tokens": p, "completion_tokens": c}, ensure_ascii=False) + "\n")
             history += [{"role": "assistant", "content": text},
                         {"role": "user", "content": "Output:\n" + output[:self.out_chars], "_obs": True}]
             if self.client.task_completed(task_id):
@@ -88,4 +91,4 @@ class AppWorldAgent:
         return {"task_id": task_id, "instruction": info["instruction"], "status": status, "steps": step,
                 "done_step": done_step, "prompt_tokens": tok_p, "completion_tokens": tok_c,
                 "seconds": round(time.time() - t0, 1), "cards": [c.get("id") for c in self.cards],
-                "cfg": f"{self.max_steps}/{self.keep_outputs}/{self.out_chars}"}
+                "thinking": self.thinking, "cfg": f"{self.max_steps}/{self.keep_outputs}/{self.out_chars}"}

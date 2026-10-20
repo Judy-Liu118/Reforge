@@ -101,38 +101,48 @@ DISTILL_PROMPT = """An agent works in a simulated world of apps through Python A
 its final answer, and a verifier then confirmed the following about the list/search API calls it relied on:
 {evidence}
 Write ONE reusable constraint card that would prevent this class of mistake in any future task in this environment.
-Rules: abstract — do not name any app, API, function, entity, id or value from the episode; you may name the
-parameters page_index and page_limit and the default page size; state what to do, not code.
+Rules:
+- abstract: do not name any app, API, function, entity, id or value from the episode;
+- concrete anchor: state the default page size ({limit}) as a number and use the parameter names page_limit and page_index;
+- checkable trigger: the card must fire on something the agent can see, i.e. a call returning exactly page_limit
+  (default {limit}) items, and say to keep requesting page_index+1 until a call returns fewer than page_limit items
+  before aggregating or answering;
+- state what to do, not code.
 Return JSON only: {{"trigger": "<when the card applies>", "guardrail": "<what to do>"}}"""
 
 
-def _lint(card: dict, banned: set[str]) -> list[str]:
+def _lint(card: dict, banned: set[str], required: set[str]) -> list[str]:
     text = f"{card.get('trigger', '')} {card.get('guardrail', '')}".lower()
-    bad = [w for w in banned if re.search(rf"\b{re.escape(w.lower())}\b", text)]
+    def has(w: str) -> bool:
+        return re.search(r"(?<![\w])" + re.escape(w.lower()) + r"(?![\w])", text) is not None
+
+    bad = [w for w in banned if has(w)]
+    bad += [f"<missing {w}>" for w in required if not has(w)]
     if not card.get("trigger") or not card.get("guardrail"):
         bad.append("<missing field>")
     return bad
 
 
 def distill(evidence: list[dict], model: str | None = None) -> tuple[dict | None, list[dict]]:
-    """→ (card or None, attempts). Banned words: every app and API name in the docs."""
+    """→ (card or None, attempts). Banned: every app and API name in the docs. Required: the page size, page_index."""
     from openai import OpenAI
 
-    banned = {f.stem for f in DOCS.glob("*.json")} | {a for e in paginated_endpoints() for a in [e["api"]]}
+    banned = {f.stem for f in DOCS.glob("*.json")} | {e["api"] for e in paginated_endpoints()}
+    limit = evidence[0]["page_limit"]
+    required = {str(limit), "page_index", "page_limit"}
     c = OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.environ["LLM_API_KEY"], timeout=300)
     model = model or os.environ["LLM_MODEL"]
-    ev = json.dumps(evidence, indent=1)
+    prompt = DISTILL_PROMPT.format(evidence=json.dumps(evidence, indent=1), limit=limit)
     attempts = []
     for _ in range(2):
-        r = c.chat.completions.create(model=model, temperature=0,
-                                      messages=[{"role": "user", "content": DISTILL_PROMPT.format(evidence=ev)}])
+        r = c.chat.completions.create(model=model, temperature=0, messages=[{"role": "user", "content": prompt}])
         raw = r.choices[0].message.content or ""
         m = re.search(r"\{.*\}", raw, flags=re.S)
         try:
             card = json.loads(m.group(0)) if m else {}
         except ValueError:
             card = {}
-        bad = _lint(card, banned)
+        bad = _lint(card, banned, required)
         attempts.append({"raw": raw, "lint": bad, "prompt_tokens": r.usage.prompt_tokens,
                          "completion_tokens": r.usage.completion_tokens})
         if not bad:
