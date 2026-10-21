@@ -7,6 +7,22 @@ not include AppWorld task content, instructions, answers or traces: the AppWorld
 they not be published in plain text, so they stay under the git-ignored `runs/`. Numbers marked n=1 are
 demonstration traces, not statistical claims.
 
+## Status (2026-10-21)
+
+**Wired into the main runtime behind a feature flag, off by default.** Replaying the recorded trajectories
+confirmed that the component version reproduces the script version.
+
+- `build_graph()` attaches two hooks:
+  - card guidance in the code-generation prompt;
+  - probes plus gated minting after each execution.
+- Both hooks are no-ops unless `REFORGE_EXPERIENCE_CARDS=1`. With the flag off, the codegen prompt is byte-identical and nothing is logged; an integration test checks this.
+- The AppWorld scripts mint, gate, store and recall through `reforge/experience`.
+- A zero-token replay (`scripts/replay_appworld_component.py`, 19 checks, all pass) shows the component version matches the script version:
+  - same verifier evidence and same cards;
+  - byte-identical system prompts on every recorded card arm;
+  - probe output equal to the legacy reader on all 29 recorded request logs;
+  - the hero result re-tabulates to **4/4 fixed with the card, 0/2 correct without it**.
+
 ## 1. What was built
 
 | Piece | What it does | Where |
@@ -16,7 +32,8 @@ demonstration traces, not statistical claims.
 | Experience cards | One atomic constraint per card: `{trigger, guardrail}`, rendered into the prompt as reasoning guidance (not code, not spliced into outputs) | `reforge/experience/` |
 | Cheap probes for silent errors | Pagination: the agent finished, a list read's last page was full, and a read-only re-call shows the next page is non-empty. Login identity: a login call raised (L0), and a replay of identity forms shows which one works | `reforge/experience/probes.py` |
 | Layered recall | Layer 1: app / environment convention cards by scope, no embedding. Layer 2: task-level cards via a plug-in retriever, admitted only through the verifier gate; **unsolved**, default returns nothing | `reforge/experience/recall.py` |
-| Safety rails | Verifier-gated admit → quarantine → paired canary → promote; eviction with a `used_by` snapshot; feature flag off by default | `reforge/experience/store.py`, `loop.py` |
+| Safety rails | Verifier-gated admit → quarantine → paired canary → promote; eviction with a `used_by` snapshot; duplicate lessons rejected; feature flag off by default | `reforge/experience/store.py`, `loop.py` |
+| Runtime integration | Two hooks in the main workflow (codegen guidance; after-execution probe → verify → mint into quarantine). Probes for the sandbox domain reuse existing runtime signals: swallowed exception (integrity guard → metamorphic un-swallowed re-run) and missing return (`None` result → AST check). Empty / `nan` outputs are probe-only and never minted | `reforge/experience/runtime_hooks.py`, `runtime_probes.py` |
 | Event logs | Every agent step (code + output + tokens) goes to `steps.jsonl`. Every card event (admitted / rejected / recalled / canary / promoted / evicted) goes to the append-only loop log; card state is a projection of it | `reforge/online/loop_log.py`, `runs/` |
 
 ## 2. What was shown
@@ -64,6 +81,7 @@ Both arms then ran out of the per-episode token cap before finishing the task, s
    - BIRD fact memory: NO-GO. Recalled near-facts mislead (−0.10); constraint rewriting hurt (−0.17).
 
 ## 4. Future work
+- **Measure the runtime-domain probes on live traffic.** They are tested on a real sandbox, but their precision and recall on production runs are unmeasured. Runtime cards also need an offline canary before promotion.
 - **Task-level precise retrieval.** Match on runtime events (step code / output) rather than instruction text, or on a distilled "applies-to" field. Audit precision offline on recorded traces before any agent run.
 - **Card compliance.** Measure it per model, and compare phrasing (abstract vs anchored) at larger n.
 - **On-demand recall.** Inject a convention card when its trigger fires (e.g. a list call returned exactly `page_limit` items), not up front. This addresses the step cost in finding 2.

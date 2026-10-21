@@ -203,8 +203,12 @@ The runtime is exercised on real tasks, each with a reproducible report under
 
 `reforge/experience/` turns an agent's own verified failures into atomic
 **constraint cards** `{trigger, guardrail}` and hands them to later tasks.
-It is off by default (`REFORGE_EXPERIENCE_CARDS=1` turns it on), so attaching
-it changes nothing until a canaried bank exists.
+**It is wired into the main runtime behind a feature flag that is off by default**
+(`REFORGE_EXPERIENCE_CARDS=1` turns it on). Replaying recorded trajectories confirmed that the component
+version reproduces the script version. With the flag on, `build_graph()` adds card guidance to the
+code-generation prompt and runs probe → verify → quarantine-mint after each execution. The runtime-domain
+probes are a swallowed exception (confirmed by an un-swallowed re-run) and a missing return (confirmed by
+an AST check). With the flag off, the prompt is byte-identical and nothing is logged.
 
 ```
 failure (e.g. answered after reading only page 0)
@@ -222,6 +226,7 @@ Measured on AppWorld with qwen3.8-27b:
 - **Same scenario**: a pagination card minted this way fixed 4/4 silent-error runs. Without it, 0/2 were correct.
 - **Different scenario**: a login card transferred at the behaviour level (n=1).
 - **Retrieval key**: embedding the task instruction against the card trigger turned out to be the wrong key, which is why recall is scope-based and task-level retrieval is an open interface.
+- **Component vs scripts**: a zero-token replay of the recorded runs through the component reproduced the script-version results. Evidence, cards and prompts were byte-identical, and the hero result re-tabulates to 4/4.
 
 Component docs: [`reforge/experience/README.md`](reforge/experience/README.md); summary and limitations:
 [`docs/EXPERIENCE_LOOP_SUMMARY.md`](docs/EXPERIENCE_LOOP_SUMMARY.md).

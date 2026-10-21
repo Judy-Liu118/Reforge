@@ -11,6 +11,10 @@ An ExecutionEventLog + session_id may also be injected.  When provided, the
 execution / evaluation / reflection / retry_decision nodes emit ExecutionEvents
 around each lifecycle transition.  When omitted, behavior is unchanged.
 
+The experience loop (reforge.experience) hooks in at two points — card guidance in the
+code-generation prompt, probes + gated minting after each execution — and both are no-ops
+unless REFORGE_EXPERIENCE_CARDS=1.
+
 An ExecutionContext may be passed via *context*. When set, it supersedes the
 loose *session_id* argument and threads trace_id through every emitted event so
 the dashboard can pivot a multi-session investigation back to one request.
@@ -27,6 +31,7 @@ from reforge.runtime.events.emitters import (
 from reforge.runtime.events.log import ExecutionEventLog
 from reforge.runtime.events.models import ExecutionContext
 from langgraph.graph import StateGraph
+from reforge.experience.runtime_hooks import with_after_execution
 from reforge.runtime.orchestration.graph.nodes import (
     capability_node,
     code_generation_node,
@@ -60,15 +65,19 @@ def build_graph(
     def _reflection_base(state: RuntimeState) -> dict:
         return reflection_node(state, substrate=memory_substrate)
 
+    def _code_generation(state: RuntimeState) -> dict:
+        return code_generation_node(state, session_id=session_id)
+
     _execution = wrap_execution_node(execution_node, event_log, session_id, trace_id=trace_id)
-    _evaluation = wrap_evaluation_node(evaluation_node, event_log, session_id, trace_id=trace_id)
+    _evaluation = with_after_execution(
+        wrap_evaluation_node(evaluation_node, event_log, session_id, trace_id=trace_id), session_id)
     _reflection = wrap_reflection_node(_reflection_base, event_log, session_id, trace_id=trace_id)
     _retry_decision = wrap_retry_decision_node(retry_decision_node, event_log, session_id, trace_id=trace_id)
     _final_response = wrap_final_response_node(final_response_node, event_log, session_id, trace_id=trace_id)
 
     graph.add_node("planner", _planner)
     graph.add_node("capability_check", capability_node)
-    graph.add_node("code_generation", code_generation_node)
+    graph.add_node("code_generation", _code_generation)
     graph.add_node("execution", _execution)
     graph.add_node("reflection", _reflection)
     graph.add_node("evaluation", _evaluation)

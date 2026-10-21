@@ -52,6 +52,7 @@ class ExperienceConfig:
     enabled: bool = field(default_factory=_flag_default)
     max_injected: int = 4
     banned_terms: frozenset[str] = frozenset()                  # e.g. app / API names for env-wide cards
+    banned_by_kind: dict[str, frozenset[str]] = field(default_factory=dict)   # kind -> extra banned terms
     required_anchors: dict[str, frozenset[str]] = field(default_factory=dict)   # kind -> terms that must appear
     task_retriever: TaskLevelRetriever = unsolved_task_retriever
     distill_attempts: int = 2
@@ -104,15 +105,22 @@ class ExperienceLoop:
              level: str = CONVENTION) -> MintResult:
         """Verifier-confirmed failure → card in quarantine. Gold is not an input: confirmation is the verifier's."""
         required = self.config.required_anchors.get(failure.kind, frozenset())
+        banned = self.config.banned_terms | self.config.banned_by_kind.get(failure.kind, frozenset())
         reasons: tuple[str, ...] = ()
         for attempt in range(1, self.config.distill_attempts + 1):
             body = distill(failure) or {}
             trig, guard = str(body.get("trigger", "")), str(body.get("guardrail", ""))
-            res = gate.check(trig, guard, banned=self.config.banned_terms, required=required, has_evidence=True)
+            res = gate.check(trig, guard, banned=banned, required=required, has_evidence=True)
             if not res.ok:
                 reasons = res.reasons
                 self.store.reject(trig, guard, res.reasons, source_task=failure.source_task)
                 continue
+            dup = next((c for c in self.store.cards().values()
+                        if c.kind == failure.kind and c.trigger == trig and c.guardrail == guard), None)
+            if dup is not None:                         # same lesson again (or an evicted one): never re-admit
+                reasons = (f"duplicate_of:{dup.card_id}:{dup.status}",)
+                self.store.reject(trig, guard, reasons, source_task=failure.source_task)
+                return MintResult(None, reasons, attempt)
             card = ConstraintCard(card_id=f"cc-{uuid.uuid4().hex[:10]}", trigger=trig, guardrail=guard,
                                   scope=Scope(env=self.config.env, apps=apps, level=level), kind=failure.kind,
                                   source_task=failure.source_task, verifier=failure.verifier,

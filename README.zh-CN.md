@@ -189,7 +189,7 @@ reforge "..."
 ## 经验闭环：不用 gold 从失败中学(默认关闭)
 
 `reforge/experience/` 把 agent 自己经验证确认的失败蒸成原子**约束卡** `{trigger, guardrail}`,交给后续任务。
-默认关闭(`REFORGE_EXPERIENCE_CARDS=1` 开启),在卡库经过金丝雀之前挂上它不会改变任何行为。
+**已接入主运行时(feature flag 默认关),经轨迹回放验证组件版与脚本版一致。** 设 `REFORGE_EXPERIENCE_CARDS=1` 开启后,`build_graph()` 会在代码生成 prompt 里加入卡片指引，并在每轮执行后跑"探针 → 验证 → 入隔离区"。运行时执行域的探针有两类：被吞掉的异常(用去掉吞异常后的重跑确认)、函数缺少返回值(用 AST 确认)。关闭时 prompt 字节级不变，也不写日志。
 
 ```
 失败(如只读第 0 页就作答)
@@ -207,6 +207,7 @@ AppWorld 上的实测结果(qwen3.8-27b):
 - **同场景**:这样蒸出的翻页卡修好了 4/4 个静默错回合;无卡时 0/2 答对。
 - **跨场景**:登录卡在行为层面迁移成功(n=1)。
 - **检索键**:"任务指令 ↔ 卡 trigger"的语义检索是错的键，所以召回改为按 scope,任务级检索只留开放接口。
+- **组件版 vs 脚本版**:把已记录的轨迹经组件零 token 回放，复现了脚本版结果。证据、卡片和 prompt 字节级一致,hero 结果重新统计后仍是 4/4。
 
 组件文档见 [`reforge/experience/README.md`](reforge/experience/README.md);总结与局限见
 [`docs/EXPERIENCE_LOOP_SUMMARY.md`](docs/EXPERIENCE_LOOP_SUMMARY.md)。

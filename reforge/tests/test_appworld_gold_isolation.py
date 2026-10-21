@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
-_CONTROL = ["appworld_agent.py", "appworld_cards.py", "appworld_client.py"]
+_CONTROL = ["appworld_agent.py", "appworld_cards.py", "appworld_client.py", "appworld_experience.py"]
 
 
 def _violations(path: Path) -> list[str]:

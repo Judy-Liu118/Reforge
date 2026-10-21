@@ -58,7 +58,7 @@ def _strip_markdown(raw: str) -> str:
     return "\n\n".join(non_empty)
 
 
-def code_generation_node(state: RuntimeState) -> dict:
+def code_generation_node(state: RuntimeState, *, session_id: str = "") -> dict:
     eval_result = state.semantic_state.evaluation_result
     is_retry = bool(state.traceback or (eval_result and not eval_result.passed))
 
@@ -92,6 +92,11 @@ def code_generation_node(state: RuntimeState) -> dict:
     system_prompt = base_system
     if extra_system:
         system_prompt = base_system + "\n\n" + "\n".join(extra_system)
+    # Experience cards: "" unless REFORGE_EXPERIENCE_CARDS=1 (flag off → prompt byte-identical).
+    from reforge.experience.runtime_hooks import codegen_guidance
+    guidance = codegen_guidance(state, session_id)
+    if guidance:
+        system_prompt = system_prompt + "\n\n" + guidance
 
     plan = (state.semantic_state.plan or "").strip()
     plan_section = f"\n\nPlan:\n{plan}" if plan else ""

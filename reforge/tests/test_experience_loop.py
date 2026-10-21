@@ -172,3 +172,20 @@ def test_experience_package_never_touches_gold():
             elif isinstance(node, ast.ImportFrom) and node.module and ("shadow" in node.module or "gold" in node.module):
                 bad.append(f"{f.name}:{node.lineno} import")
     assert not bad, bad
+
+
+def test_runtime_probes_swallow_and_missing_return():
+    from reforge.experience import runtime_probes as rp
+
+    code = "try:\n    x = {}['k']\nexcept Exception:\n    pass\nprint(1)"
+    assert rp.swallowed_exception_probe(code, 0) == ["blanket_swallow"]
+    assert rp.swallowed_exception_probe(code, 1) == []                     # crashed runs are L0's business
+    assert "raise" in rp.unswallow(code) and "pass" not in rp.unswallow(code)
+    f = rp.confirm_swallowed_exception(code, 0, lambda c: (1, "Traceback (most recent call last):\nKeyError: 'k'"),
+                                       source_task="t")
+    assert f.evidence[0]["exception_type"] == "KeyError"
+    assert rp.confirm_swallowed_exception(code, 0, lambda c: (0, ""), source_task="t") is None
+    ok_fn = "def f():\n    return None if False else 3\nprint(f())"
+    assert rp.confirm_missing_return(ok_fn, "None\n", source_task="t") is None
+    assert rp.confirm_missing_return("def f():\n    y = 1\nprint(f())", "None\n", source_task="t") is not None
+    assert [s.kind for s in rp.probe_only_suspicions("q", "", 0)] == ["empty_output"]

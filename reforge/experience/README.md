@@ -9,6 +9,34 @@ on it is handed to every task its **scope** covers.
 **Off by default.** Nothing changes for an agent until
 `REFORGE_EXPERIENCE_CARDS=1`, or until `ExperienceConfig(enabled=True)`, is set.
 
+**Status.** The package is wired into the main runtime workflow behind that flag (see below). Replaying
+the recorded AppWorld trajectories (zero tokens) confirmed that the component version reproduces the
+script version, including the 4/4 hero result. See `scripts/replay_appworld_component.py`.
+
+## Main runtime integration (`reforge/runtime/orchestration/graph`)
+
+`build_graph()` attaches two hooks from `reforge/experience/runtime_hooks.py`. Both return immediately
+unless `REFORGE_EXPERIENCE_CARDS=1`; with the flag off, the code-generation prompt is byte-identical
+and no experience log is written. An integration test checks both.
+
+| hook | where | what it does |
+|---|---|---|
+| `codegen_guidance(state, session_id)` | code-generation node, before execution | Recalls active cards by scope (`env="reforge"`) and appends `render(cards)` to the system prompt. |
+| `with_after_execution(node)` → `after_execution(state, session_id)` | wraps the evaluation node, after each execution | Runs the domain probes and confirms them with gold-free verifiers. Confirmed failures are minted into **quarantine**. The hook never changes state and never raises into the graph. |
+
+Probes written for Reforge's own execution domain, built on signals the runtime already computes:
+
+| failure kind | probe (existing signal) | verifier (gold-free, no LLM) |
+|---|---|---|
+| `swallowed_exception` | `RetryIntegrityGuard` flags a no-op handler, and exit code is 0 | Metamorphic re-run: the flagged handlers' bodies become `raise` and the script runs again in the sandbox. A traceback confirms a real swallowed error. |
+| `missing_return` | last stdout line is `None` (the evaluator's `SUSPICIOUS_NUMERIC`) | AST check: a function that is printed or used as the result has no `return <value>` |
+| empty stdout, `nan` / `inf` | heuristic evaluator signals | none: reported as probe-only, **never minted** |
+
+Distillation in the runtime domain is a fixed template per failure kind, with no LLM call. Evidence is
+redacted to shapes: handler tier, exception class name, exit codes. The same lesson is never admitted
+twice; a duplicate is rejected with `duplicate_of:<id>`, including a duplicate of an evicted card.
+Runtime cards stay quarantined until an offline canary promotes them.
+
 ## The loop
 
 ```
@@ -80,9 +108,11 @@ The host supplies these:
 | `env`, `known_apps` | — | scope matching. A task's apps are the app names mentioned in its instruction |
 | `max_injected` | 4 | cap on cards per task |
 | `banned_terms` | ∅ | the gate rejects cards that mention these |
+| `banned_by_kind` | {} | extra banned terms per failure kind (e.g. app names for pagination cards only) |
 | `required_anchors` | {} | per failure kind, terms that must appear in the card |
 | `task_retriever` | `unsolved_task_retriever` (returns `[]`) | layer-2 plug-in |
 | `distill_attempts` | 2 | the gate gets this many distiller tries |
+| env `REFORGE_EXPERIENCE_LOG` | `~/.reforge/experience/loop.jsonl` | the runtime hooks' event log |
 
 ## Safety rails
 - **Verifier-gated admit**: a card needs a `VerifiedFailure` with non-empty evidence. Gold is never an input.
@@ -96,11 +126,24 @@ The host supplies these:
 2. **Scope recall is not free.** An env-wide pagination card injected into a task that didn't need it caused four extra verification searches, which is an open when-to-recall problem (n=1).
 3. **Multi-convention tasks need several cards at once.** In the one cross-scenario run, a login card was followed (first login used `username=`, no error), but the task still failed on conventions with no card yet (passing the access token, finishing a non-question task). Measured n=1.
 4. **Card compliance depends on the model.** An abstract card ("read every page") did not change a 27b agent's behaviour; a card with the concrete anchor (default page size 5, "exactly page_limit items → page_index+1") did.
-5. **Probes cover two failure kinds**, pagination and login identity. Anything else needs a new probe plus verifier.
+5. **Probes cover four failure kinds**: pagination and login identity (AppWorld), swallowed exception and missing return (runtime). Anything else needs a new probe plus verifier.
+6. **The runtime-domain probes have not been measured on live traffic.** They have integration tests on a real sandbox, but no precision/recall numbers on production runs yet. Runtime cards also need an offline canary before they can be promoted.
 
-## Experiment harness (not part of the component)
-The AppWorld measurements behind the numbers were run with `scripts/appworld_*.py`, `scripts/run_appworld_hero.py`
-and `scripts/run_appworld_multicard.py`. These predate this package and keep their own card files so that runs
-can be reproduced. `scripts/appworld_gold.py` is the only module that calls AppWorld's evaluator. Traces and
-reports live under the git-ignored `runs/`, because the AppWorld bundle license asks that task content not
-be published.
+## Experiment harness and replay
+The AppWorld experiment scripts now mint, gate, store and recall through this package, via
+`scripts/appworld_experience.py`. Reading AppWorld's request log, the in-world re-calls and the LLM
+distillers stay in the scripts. `scripts/appworld_gold.py` is still the only module that calls AppWorld's
+evaluator.
+
+`scripts/replay_appworld_component.py` replays the recorded runs without any LLM call. It needs only the
+local AppWorld server, for the verifiers' read-only re-calls. It checks 19 things:
+- recorded failure → component probe + verifier → same evidence → same card → quarantined → not recalled
+- promoted on the recorded paired canary
+- recall gives a system prompt byte-identical to the one the script version sent, on all four hero card arms and the cross-scenario scope arm
+- the component probe groups equal the legacy reader's on all 29 recorded request logs
+- recorded outcomes re-tabulate to **card arms fixed 4/4, no card 0/2**
+- the login card is reproduced the same way
+- an unverified distractor cannot enter the store
+
+Traces and reports stay under the git-ignored `runs/`, because the AppWorld bundle license asks that task
+content not be published.

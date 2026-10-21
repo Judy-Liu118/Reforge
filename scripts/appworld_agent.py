@@ -13,20 +13,35 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
-from appworld_baseline import SYSTEM
-from appworld_client import AppWorldClient
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-CARD_HEADER = ("\n\nGuardrails learned from earlier verified failures in this environment "
-               "(guidance for your reasoning, not code to copy):")
+from appworld_baseline import SYSTEM  # noqa: E402
+from appworld_client import AppWorldClient  # noqa: E402
+from reforge.experience import ExperienceLoop  # noqa: E402
 
 
-def system_prompt(cards: list[dict]) -> str:
-    if not cards:
-        return SYSTEM
-    return SYSTEM + CARD_HEADER + "".join(f"\n- When: {c['trigger']}\n  Then: {c['guardrail']}" for c in cards)
+def system_prompt(cards: list) -> str:
+    """Baseline prompt + the component's rendered card block (reforge.experience.ExperienceLoop.render).
+
+    Byte-identical to the pre-component formula (SYSTEM + blank line + header + "- When/Then" lines);
+    scripts/replay_appworld_component.py checks that on the recorded hero / multicard cards.
+    """
+    block = ExperienceLoop.render([_as_card(c) for c in cards])
+    return SYSTEM + "\n\n" + block if block else SYSTEM
+
+
+def _as_card(c):
+    """Component ConstraintCard, or a legacy {trigger, guardrail} dict (distractor cards in the experiments)."""
+    return c if hasattr(c, "trigger") else SimpleNamespace(trigger=c["trigger"], guardrail=c["guardrail"])
+
+
+def _card_id(c) -> str | None:
+    return getattr(c, "card_id", None) or (c.get("id") if isinstance(c, dict) else None)
 
 
 def _code(text: str) -> str:
@@ -95,5 +110,5 @@ class AppWorldAgent:
                 break
         return {"task_id": task_id, "instruction": info["instruction"], "status": status, "steps": step,
                 "done_step": done_step, "prompt_tokens": tok_p, "completion_tokens": tok_c,
-                "seconds": round(time.time() - t0, 1), "cards": [c.get("id") for c in self.cards],
+                "seconds": round(time.time() - t0, 1), "cards": [_card_id(c) for c in self.cards],
                 "thinking": self.thinking, "cfg": f"{self.max_steps}/{self.keep_outputs}/{self.out_chars}"}

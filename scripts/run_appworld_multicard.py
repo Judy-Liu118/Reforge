@@ -18,10 +18,12 @@ _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import appworld_cards as cards_mod  # noqa: E402
+import appworld_experience as ae  # noqa: E402
 import appworld_gold  # noqa: E402
 import appworld_recall  # noqa: E402
 from appworld_agent import AppWorldAgent  # noqa: E402
 from appworld_client import AppWorldClient  # noqa: E402
+from reforge.experience import VerifiedFailure  # noqa: E402
 
 OUT = _ROOT / "runs" / "appworld_multicard"
 GATE = _ROOT / "runs" / "appworld_gate"
@@ -45,24 +47,32 @@ def _encoder():
 
 
 def step_bank(client: AppWorldClient) -> None:
-    p = json.loads((_ROOT / "runs" / "appworld_hero" / "v2" / "cards.json").read_text(encoding="utf-8"))[0]
+    """L mint through the component (L0 probe on recorded steps -> identity replay -> distill -> gate ->
+    QUARANTINED in the shared AppWorld bank). bank.json (P / L / distractors D1, D2 as plain dicts) is still
+    written for the embedding preflight, which tests retrieval only — distractors never enter the component."""
+    loop = ae.make_loop(ae.BANK)
     rec = {"login_sources": []}
     evidence = []
     for task, app in LOGIN_SOURCES:
-        fails = cards_mod.login_failures(GATE / task / "steps.jsonl")         # L0: the call raised
-        ev = cards_mod.verify_login(client, task, app, EXPERIMENT + "_verify") if fails else None
-        rec["login_sources"].append({"task": task, "app": app, "observed_failures": fails, "verified": ev})
-        if ev:
-            evidence.append(ev)
-    card, attempts = cards_mod.distill_login(evidence) if evidence else (None, [])
-    rec.update(attempts=attempts, card=card)
+        steps = ae.read_steps(GATE / task / "steps.jsonl")
+        f = ae.login_failure(client, task, app, steps, EXPERIMENT + "_verify")
+        rec["login_sources"].append({"task": task, "app": app, "verified": list(f.evidence) if f else None})
+        if f:
+            evidence += list(f.evidence)
+    if not evidence:
+        raise SystemExit("no verified login failure — stop (prereg)")
+    failure = VerifiedFailure("login_identity", "identity_replay", tuple(evidence),
+                              source_task="+".join(t for t, _ in LOGIN_SOURCES))
+    res = loop.mint(failure, ae.llm_distiller)
+    rec.update(card=res.card.to_dict() if res.card else None, reasons=list(res.reasons))
     (OUT / "mint_login.json").write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
-    if not card:
+    if not res.card:
         raise SystemExit("L card not admitted — stop (prereg)")
-    bank = [{"id": "P", "role": "verified", "apps": None, "trigger": p["trigger"], "guardrail": p["guardrail"],
-             "source": "hero v2 card1"},
-            {"id": "L", "role": "verified", "apps": None, **card, "source": [s for s, _ in LOGIN_SOURCES],
-             "evidence": evidence}, D1, D2]
+    active = {c.kind: c for c in loop.store.by_status("active")}
+    p = active.get("pagination")
+    bank = ([{"id": "P", "role": "verified", "apps": None, "trigger": p.trigger, "guardrail": p.guardrail}] if p else []) + [
+        {"id": "L", "role": "verified", "apps": None, "trigger": res.card.trigger, "guardrail": res.card.guardrail,
+         "card_id": res.card.card_id}, D1, D2]
     (OUT / "bank.json").write_text(json.dumps(bank, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(bank, ensure_ascii=False, indent=1))
 
@@ -103,14 +113,14 @@ def _login_markers(steps_path: Path) -> dict:
             "login_error_steps": errors}
 
 
-def run_arm(arm: str, task: str, cards: list[dict], client: AppWorldClient, recall_info: dict | None) -> dict:
+def run_arm(arm: str, task: str, cards: list, client: AppWorldClient, recall_info: dict | None) -> dict:
     d = OUT / f"{arm}_{task}"
     ep = AppWorldAgent(client, cards=cards, token_cap=EPISODE_CAP).run(task, EXPERIMENT, d)
     shadow = appworld_gold.evaluate(client, task)                    # measurement only
     (d / "shadow_eval.json").write_text(json.dumps(shadow, ensure_ascii=False, indent=1), encoding="utf-8")
     reads = cards_mod.list_reads(cards_mod.read_api_calls(client, task, EXPERIMENT))
     client.close(task)
-    rec = {"arm": arm, **ep, "recall": recall_info, "injected": [c["id"] for c in cards],
+    rec = {"arm": arm, **ep, "recall": recall_info, "injected": [getattr(c, "card_id", None) or c["id"] for c in cards],
            "markers": cards_mod.behaviour_markers(reads) | _login_markers(d / "steps.jsonl"),
            "success": shadow.get("success"), "num_failures": len(shadow.get("failures", [])),
            "num_tests": shadow.get("num_tests")}
@@ -143,12 +153,13 @@ def step_arms(client: AppWorldClient) -> None:
 
 
 def step_scope(client: AppWorldClient) -> None:
-    bank = [c for c in json.loads((OUT / "bank.json").read_text(encoding="utf-8")) if c["id"] != "D2"]
+    """Layer-1 recall through the component: active convention cards whose scope covers the task."""
+    loop = ae.make_loop(ae.BANK)
     spent = 0
     for t in SCOPE_TARGETS:
-        cards = appworld_recall.scope_recall(_instruction(t), bank)
+        cards = loop.recall(ae.task(t, _instruction(t), f"scope_{t}"))
         info = {"layer": "scope", "apps": sorted(appworld_recall.apps_in(_instruction(t))),
-                "injected": [c["id"] for c in cards], "not_injected": [c["id"] for c in bank if c not in cards]}
+                "injected": [c.card_id for c in cards]}
         for arm in ("none", "scope"):
             if spent + EPISODE_CAP > BATCH_BUDGET:
                 print(f"budget guard: spent {spent}, next episode could exceed {BATCH_BUDGET} — stop", flush=True)
