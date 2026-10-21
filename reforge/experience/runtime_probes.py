@@ -11,9 +11,13 @@ Built on signals the runtime already computes, not on AppWorld's API shape:
                                  SUSPICIOUS_NUMERIC value)
                           verifier: AST — a function defined in the script is printed / used as the
                                  result but has no `return <value>` anywhere in its body
-    probe-only (no mint)  empty stdout, nan / inf on a statistical query: suspicious, but nothing
-                          here can confirm them without the task's answer, so they are reported and
-                          never turned into cards
+    probe-only            empty stdout, nan / inf, values coerced to missing (errors="coerce"):
+                          suspicious, but nothing deterministic can confirm them without the task's
+                          answer. They are never minted by this module; the optional L2 critic
+                          (critic.py) may judge them
+
+Deterministic confirmations carry confirmation="reproducible" in their evidence; critic
+confirmations carry confirmation="judgment".
 
 Evidence is redacted to shapes (handler tier, exception class name, exit codes) — never data values.
 """
@@ -85,7 +89,7 @@ def confirm_swallowed_exception(code: str, exit_code: int | None, rerun: Callabl
     if rc == 0 or "Traceback" not in (stderr or ""):
         return None
     m = _EXC_LINE.findall(stderr or "")
-    ev = {"kind": "swallowed exception", "handler_tiers": sorted(set(tiers)), "original_exit": 0,
+    ev = {"kind": "swallowed exception", "confirmation": "reproducible", "handler_tiers": sorted(set(tiers)), "original_exit": 0,
           "unswallowed_exit": rc, "exception_type": m[-1].split(".")[-1] if m else "unknown"}
     return VerifiedFailure("swallowed_exception", "unswallowed_rerun", (ev,), source_task, source_run)
 
@@ -124,16 +128,30 @@ def confirm_missing_return(code: str, stdout: str, *, source_task: str,
     hit = sorted(no_value & used)
     if not hit:
         return None
-    ev = {"kind": "missing return", "printed_value": "None", "functions_without_return_value": len(hit)}
+    ev = {"kind": "missing return", "confirmation": "reproducible", "printed_value": "None", "functions_without_return_value": len(hit)}
     return VerifiedFailure("missing_return", "ast_no_return_value", (ev,), source_task, source_run)
 
 
-def probe_only_suspicions(user_request: str, stdout: str, exit_code: int | None) -> list[Suspicion]:
-    """Signals worth surfacing that no gold-free verifier here can confirm — never minted."""
+def coerces_to_missing(code: str) -> bool:
+    """A call with errors="coerce" (pd.to_numeric / to_datetime / astype): invalid values become NaN silently."""
+    try:
+        tree = ast.parse(code or "")
+    except SyntaxError:
+        return False
+    return any(isinstance(n, ast.Call) and any(k.arg == "errors" and isinstance(k.value, ast.Constant)
+                                               and k.value.value == "coerce" for k in n.keywords)
+               for n in ast.walk(tree))
+
+
+def probe_only_suspicions(user_request: str, stdout: str, exit_code: int | None,
+                          code: str = "") -> list[Suspicion]:
+    """Signals worth surfacing that no deterministic verifier here can confirm."""
     out = []
     s = (stdout or "").strip()
     if exit_code == 0 and not s:
         out.append(Suspicion("empty_output", "clean exit with empty stdout"))
     if exit_code == 0 and s.casefold() in {"nan", "inf", "-inf"}:
         out.append(Suspicion("degenerate_number", f"result is {s}"))
+    if exit_code == 0 and coerces_to_missing(code):
+        out.append(Suspicion("coerce_drop", "values coerced to missing before the result was computed"))
     return out

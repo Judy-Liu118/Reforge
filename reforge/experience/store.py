@@ -103,6 +103,10 @@ class ConstraintCardStore:
         self.log.append("CARD_RECALLED", task_id=task_id, source=_SOURCE, run_id=run_id, stage=stage,
                         layer=layer, card_ids=[c.card_id for c in cards], injected=injected)
 
+    def record_judgment(self, *, task_id: str, run_id: str, **judgment) -> None:
+        """An L2 critic judgment (verdict, confidence, model, tokens) — logged whether or not it confirmed."""
+        self.log.append("VERDICT", task_id=task_id, source=_SOURCE, run_id=run_id, tier="llm_critic", **judgment)
+
     def used_by(self, card_id: str) -> list[dict]:
         return [{"task_id": e.task_id, "run_id": e.payload.get("run_id"), "stage": e.payload.get("stage"),
                  "layer": e.payload.get("layer"), "injected": e.payload.get("injected"), "ts": e.timestamp}

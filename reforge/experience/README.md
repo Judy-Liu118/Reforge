@@ -30,7 +30,15 @@ Probes written for Reforge's own execution domain, built on signals the runtime 
 |---|---|---|
 | `swallowed_exception` | `RetryIntegrityGuard` flags a no-op handler, and exit code is 0 | Metamorphic re-run: the flagged handlers' bodies become `raise` and the script runs again in the sandbox. A traceback confirms a real swallowed error. |
 | `missing_return` | last stdout line is `None` (the evaluator's `SUSPICIOUS_NUMERIC`) | AST check: a function that is printed or used as the result has no `return <value>` |
-| empty stdout, `nan` / `inf` | heuristic evaluator signals | none: reported as probe-only, **never minted** |
+| empty stdout, `nan` / `inf`, `errors="coerce"` | heuristic evaluator signals plus an AST check for coerce | none deterministic; with `REFORGE_EXPERIENCE_CRITIC=1`, the L2 critic judges them (see below) |
+
+### Optional second tier: L2 cross-model critic (`critic.py`, `REFORGE_EXPERIENCE_CRITIC=1`, off by default)
+- **Trigger**: only the probe-only signals above, at most one call per round. Requires `REFORGE_EXPERIENCE_CARDS=1`.
+- **Cross-model**: `REFORGE_EXPERIENCE_CRITIC_MODEL` must differ from `LLM_MODEL`, otherwise the tier disables itself. Optional settings: `..._BASE_URL`, `..._API_KEY`, `..._THINKING`, and the spend cap `..._MAX_TOKENS` (default 50000).
+- **Abstention**: only verdict "wrong" with confidence ≥ 0.8 confirms. A low-confidence verdict, an unparseable reply or an error counts as abstain, and the run continues.
+- **Two confirmation sources**: deterministic evidence has `confirmation="reproducible"`; critic evidence has `confirmation="judgment"` and `verifier="llm_critic"`. Both enter quarantine and need a canary to be promoted.
+- **Logging**: every judgment is a `VERDICT` event with verdict, confidence, `parse_ok`, model, tokens and prompt sha.
+- **Measured caveat**: the critic's verdicts are not reproducible. One correct round got "wrong" at confidence 1.0 on re-judgment. Keep the tier off until confirmations require agreement across samples.
 
 Distillation in the runtime domain is a fixed template per failure kind, with no LLM call. Evidence is
 redacted to shapes: handler tier, exception class name, exit codes. The same lesson is never admitted

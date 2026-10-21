@@ -189,3 +189,23 @@ def test_runtime_probes_swallow_and_missing_return():
     assert rp.confirm_missing_return(ok_fn, "None\n", source_task="t") is None
     assert rp.confirm_missing_return("def f():\n    y = 1\nprint(f())", "None\n", source_task="t") is not None
     assert [s.kind for s in rp.probe_only_suspicions("q", "", 0)] == ["empty_output"]
+
+
+def test_critic_profile_paths_and_cross_model(tmp_path):
+    from reforge.experience import critic as c
+    f = tmp_path / "a.csv"
+    f.write_text('amount\n"1,200"\n35\nN/A\n', encoding="utf-8")
+    assert c.data_paths(f"sum {f} please") == [f]
+    prof = c.profile_text([f])
+    assert "numeric_parseable=1/3" in prof and "non_numeric_examples" in prof
+    with pytest.raises(ValueError):
+        c.Critic("m", "u", "k", generator_model="m")
+    assert len(c.PROMPT_SHA) == 12
+
+
+def test_coerce_probe():
+    from reforge.experience import runtime_probes as rp
+    assert rp.coerces_to_missing("import pandas as pd\npd.to_numeric(s, errors='coerce')")
+    assert not rp.coerces_to_missing("pd.to_numeric(s)")
+    kinds = [s.kind for s in rp.probe_only_suspicions("q", "25", 0, "pd.to_numeric(x, errors='coerce')")]
+    assert kinds == ["coerce_drop"]

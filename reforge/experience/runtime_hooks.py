@@ -50,6 +50,18 @@ TEMPLATES = {
         "guardrail": "Make sure every such function returns its value with an explicit return statement; a "
                      "function without one returns None and the printed result is None.",
     },
+    # judgment-confirmed kinds (L2 critic)
+    "coerce_drop": {
+        "trigger": "When the code converts values with errors='coerce' (to_numeric, to_datetime) before aggregating.",
+        "guardrail": "Coerce turns every unparseable value into a missing value silently. First clean the formats "
+                     "the data actually uses (thousand separators, currency symbols, units, whitespace), then "
+                     "convert, and check how many values still became missing before trusting the result.",
+    },
+    "suspicious_output": {
+        "trigger": "When the printed result is empty, NaN or infinite.",
+        "guardrail": "Treat it as a failed computation, not an answer: find the step that produced no data "
+                     "(an empty filter, a failed parse, a division by zero) and fix it before reporting.",
+    },
 }
 
 
@@ -74,7 +86,20 @@ def _loop_for(path: str, canary: str = "") -> ExperienceLoop:
     return ExperienceLoop(ExperienceConfig(log_path=Path(path), env=ENV, enabled=True,
                                            canary_card_ids=frozenset(x for x in canary.split(",") if x),
                                            required_anchors={"swallowed_exception": frozenset({"raise"}),
-                                                             "missing_return": frozenset({"return"})}))
+                                                             "missing_return": frozenset({"return"}),
+                                                             "coerce_drop": frozenset({"coerce"}),
+                                                             "suspicious_output": frozenset({"nan"})}))
+
+
+@lru_cache(maxsize=1)
+def _critic():
+    """The L2 critic from env, or None when misconfigured (e.g. same model as the generator) — logged once."""
+    from reforge.experience.critic import Critic
+    try:
+        return Critic.from_env()
+    except ValueError as e:
+        logger.warning("experience critic disabled: %s", e)
+        return None
 
 
 def runtime_loop() -> ExperienceLoop:
@@ -128,8 +153,12 @@ def after_execution(state, session_id: str = "", *, rerun: Callable[[str], tuple
                 res = loop.mint(f, distill)
                 row.update(minted=res.card.card_id if res.card else None, reasons=list(res.reasons))
             rows.append(row)
-        rows += [{"kind": s.kind, "verified": False, "probe_only": True}
-                 for s in runtime_probes.probe_only_suspicions(state.user_request, out.stdout, out.exit_code)]
+        suspicions = runtime_probes.probe_only_suspicions(state.user_request, out.stdout, out.exit_code, code)
+        rows += [{"kind": s.kind, "verified": False, "probe_only": True} for s in suspicions]
+        if suspicions:
+            judged = _critic_tier(loop, t, state, code, out, suspicions, distill)
+            if judged:
+                rows.append(judged)
     except Exception:                                   # learning must never break the run it learns from
         logger.warning("experience mint failed; run continues unchanged", exc_info=True)
     for obs in PROBE_OBSERVERS:
@@ -138,6 +167,34 @@ def after_execution(state, session_id: str = "", *, rerun: Callable[[str], tuple
         except Exception:                               # an observer must never break the run either
             logger.warning("experience probe observer failed", exc_info=True)
     return rows
+
+
+def _critic_tier(loop, t, state, code, out, suspicions, distill) -> dict | None:
+    """L2: one critic call per round, only on deterministic-unconfirmable signals, only when its flag is on."""
+    from reforge.experience import critic as critic_mod
+    if not critic_mod.enabled():
+        return None
+    crit = _critic()
+    if crit is None:
+        return None
+    kinds = {s.kind for s in suspicions}
+    kind = "coerce_drop" if "coerce_drop" in kinds else "suspicious_output"
+    profile = critic_mod.profile_text(critic_mod.data_paths(state.user_request))
+    j = crit.judge(state.user_request, profile, code, out.stdout)
+    loop.store.record_judgment(task_id=t.task_id, run_id=t.run_id, signals=sorted(kinds), failure_kind=kind,
+                               model=j.model, verdict=j.verdict, confidence=j.confidence, confirmed=j.confirmed,
+                               suspect=j.suspect, prompt_tokens=j.prompt_tokens, completion_tokens=j.completion_tokens,
+                               prompt_sha=critic_mod.PROMPT_SHA, error=j.error, parse_ok=j.parse_ok)
+    row = {"kind": kind, "tier": "llm_critic", "verdict": j.verdict, "confidence": j.confidence,
+           "verified": j.confirmed, "tokens": j.total_tokens}
+    if j.confirmed:
+        f = VerifiedFailure(kind, "llm_critic", ({"kind": kind, "confirmation": "judgment", "signals": sorted(kinds),
+                                                  "critic_model": j.model, "confidence": j.confidence,
+                                                  "prompt_sha": critic_mod.PROMPT_SHA},),
+                            source_task=t.task_id, source_run=t.run_id)
+        res = loop.mint(f, distill)
+        row.update(minted=res.card.card_id if res.card else None, reasons=list(res.reasons))
+    return row
 
 
 def with_after_execution(node, session_id: str = ""):

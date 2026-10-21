@@ -23,6 +23,30 @@ confirmed that the component version reproduces the script version.
   - probe output equal to the legacy reader on all 29 recorded request logs;
   - the hero result re-tabulates to **4/4 fixed with the card, 0/2 correct without it**.
 
+### L2 critic tier (2026-10-21)
+
+**The L2 cross-model LLM critic is wired into the main runtime as an optional second tier**
+(`REFORGE_EXPERIENCE_CRITIC=1`, off by default).
+
+- **When it runs**: only on signals the deterministic verifiers cannot confirm (empty output, NaN/inf, values coerced to missing), at most one call per round.
+- **Isolation**: the critic model must differ from the generator. The frozen ladder prompt is used, with its sha stamped on each judgment.
+- **Confirmation**: only verdict "wrong" with confidence ≥ 0.8 confirms; anything else counts as abstention.
+- **Provenance**: confirmations carry `confirmation="judgment"`, distinct from re-run/AST confirmations (`"reproducible"`). They enter quarantine and need an offline canary to be promoted.
+- **Logging**: every judgment (verdict, confidence, tokens, model) is logged as a `VERDICT` event.
+
+Small test (generator qwen3.8-max, critic qwen3.8-27b; 4 triggers, about 24.7k tokens in total):
+
+| measure | result |
+|---|---|
+| true coerce failures confirmed | 2/2 |
+| false positives (first judgment) | 0/2 |
+| mean critic tokens per trigger | about 1.8k |
+| post-hoc re-judgment of a correct round | "wrong" at confidence 1.0, i.e. a false positive |
+
+The critic's verdicts are therefore not reproducible, so the tier stays off. The next step would be to
+require agreement across k samples, or a deterministic check of the critic's stated reason, before a
+confirmation counts.
+
 ## 1. What was built
 
 | Piece | What it does | Where |
@@ -33,6 +57,7 @@ confirmed that the component version reproduces the script version.
 | Cheap probes for silent errors | Pagination: the agent finished, a list read's last page was full, and a read-only re-call shows the next page is non-empty. Login identity: a login call raised (L0), and a replay of identity forms shows which one works | `reforge/experience/probes.py` |
 | Layered recall | Layer 1: app / environment convention cards by scope, no embedding. Layer 2: task-level cards via a plug-in retriever, admitted only through the verifier gate; **unsolved**, default returns nothing | `reforge/experience/recall.py` |
 | Safety rails | Verifier-gated admit → quarantine → paired canary → promote; eviction with a `used_by` snapshot; duplicate lessons rejected; feature flag off by default | `reforge/experience/store.py`, `loop.py` |
+| L2 critic tier | Optional cross-model LLM critic (`reforge/experience/critic.py`), triggered only on deterministic-unconfirmable signals; confirmations tagged as judgment; quarantine + canary like every card | `reforge/experience/critic.py`, `runtime_hooks.py` |
 | Runtime integration | Two hooks in the main workflow (codegen guidance; after-execution probe → verify → mint into quarantine). Probes for the sandbox domain reuse existing runtime signals: swallowed exception (integrity guard → metamorphic un-swallowed re-run) and missing return (`None` result → AST check). Empty / `nan` outputs are probe-only and never minted | `reforge/experience/runtime_hooks.py`, `runtime_probes.py` |
 | Event logs | Every agent step (code + output + tokens) goes to `steps.jsonl`. Every card event (admitted / rejected / recalled / canary / promoted / evicted) goes to the append-only loop log; card state is a projection of it | `reforge/online/loop_log.py`, `runs/` |
 

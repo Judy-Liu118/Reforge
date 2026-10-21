@@ -9,6 +9,9 @@ the expected answers never reach the runner).
     python scripts/run_runtime_live.py canary  --card <id> --tasks D3,D5
     python scripts/run_runtime_live.py promote --card <id> --tasks D3,D5
     python scripts/run_runtime_live.py recur   --kind swallowed_exception|missing_return
+    # L2 critic batch (RUNTIME_LIVE_DIR=runs/runtime_live/critic RUNTIME_LIVE_BUDGET=100000):
+    python scripts/run_runtime_live.py critic-replay       # critic on the recorded rounds (0 generator tokens)
+    python scripts/run_runtime_live.py discover --critic   # live, critic tier on
 """
 
 from __future__ import annotations
@@ -21,9 +24,11 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
-OUT = _ROOT / "runs" / "runtime_live"
-DATA, WORK = OUT / "data", OUT / "work"
-BUDGET, PER_RUN = 80_000, 10_000
+# RUNTIME_LIVE_DIR selects the batch directory (logs, memory, ledger); the task data is shared.
+OUT = _ROOT / os.environ.get("RUNTIME_LIVE_DIR", "runs/runtime_live")
+DATA, WORK = _ROOT / "runs" / "runtime_live" / "data", OUT / "work"
+BUDGET = int(os.environ.get("RUNTIME_LIVE_BUDGET", "80000"))
+PER_RUN = 10_000
 
 # ---- env before any reforge import (config reads env at import) --------------------------------
 from dotenv import dotenv_values  # noqa: E402
@@ -37,7 +42,7 @@ os.environ.update({
 })
 sys.path.insert(0, str(_ROOT))
 
-from reforge.experience import CanaryReport, runtime_hooks  # noqa: E402
+from reforge.experience import CanaryReport, critic, runtime_hooks, runtime_probes  # noqa: E402
 from reforge.observability.llm_events import token_accounting  # noqa: E402
 from reforge.runtime.orchestration.engine.runner import RuntimeRunner  # noqa: E402
 
@@ -108,8 +113,41 @@ def score(task: str, stdout: str, expected) -> bool:
 
 # ---- one run through the production runtime ----------------------------------------------------
 def _spent() -> int:
-    p = OUT / "runs.jsonl"
-    return sum(json.loads(x)["tokens"] for x in p.read_text(encoding="utf-8").splitlines()) if p.exists() else 0
+    total = 0
+    for name in ("runs.jsonl", "critic_replay.jsonl"):
+        p = OUT / name
+        if p.exists():
+            total += sum(json.loads(x)["tokens"] for x in p.read_text(encoding="utf-8").splitlines())
+    return total
+
+
+CRITIC_ENV = {"REFORGE_EXPERIENCE_CRITIC": "1", "REFORGE_EXPERIENCE_CRITIC_MODEL": "qwen3.8-27b",
+              "REFORGE_EXPERIENCE_CRITIC_BASE_URL": _env["VISION_LLM_BASE_URL"],
+              "REFORGE_EXPERIENCE_CRITIC_API_KEY": _env["VISION_LLM_API_KEY"],
+              "REFORGE_EXPERIENCE_CRITIC_THINKING": "false"}
+
+
+def critic_replay() -> None:
+    """Recorded flag-on rounds of the first batch -> the production trigger + critic (no generation)."""
+    src = _ROOT / "runs" / "runtime_live" / "runs.jsonl"
+    crit = critic.Critic.from_env()
+    for line in src.read_text(encoding="utf-8").splitlines():
+        r = json.loads(line)
+        for rd in r["rounds"]:
+            sus = runtime_probes.probe_only_suspicions(tasks()[r["task"]], rd["stdout"], rd["exit_code"], rd["code"])
+            row = {"task": r["task"], "arm": r["arm"], "attempt": rd["attempt"], "signals": [x.kind for x in sus],
+                   "tokens": 0}
+            if sus:
+                if _spent() + PER_RUN > BUDGET:
+                    print("token guard — stop (prereg)")
+                    return
+                req = tasks()[r["task"]]
+                j = crit.judge(req, critic.profile_text(critic.data_paths(req)), rd["code"], rd["stdout"])
+                row.update(verdict=j.verdict, confidence=j.confidence, confirmed=j.confirmed, suspect=j.suspect,
+                           tokens=j.total_tokens, error=j.error)
+            with open(OUT / "critic_replay.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            print(json.dumps(row, ensure_ascii=False), flush=True)
 
 
 def run(task: str, arm: str, *, cards_flag: bool, canary: str = "") -> dict | None:
@@ -146,14 +184,19 @@ def run(task: str, arm: str, *, cards_flag: bool, canary: str = "") -> dict | No
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("phase", choices=["discover", "canary", "promote", "recur"])
+    ap.add_argument("phase", choices=["discover", "canary", "promote", "recur", "critic-replay"])
+    ap.add_argument("--critic", action="store_true", help="turn the L2 critic tier on (cross-model)")
     ap.add_argument("--card")
     ap.add_argument("--tasks")
     ap.add_argument("--kind")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     build_data()
-    if a.phase == "discover":
+    if a.critic or a.phase == "critic-replay":
+        os.environ.update(CRITIC_ENV)
+    if a.phase == "critic-replay":
+        critic_replay()
+    elif a.phase == "discover":
         for t in ("D1", "D2", "D3", "D4", "D5"):
             if run(t, "discover", cards_flag=True) is None:
                 return

@@ -7,6 +7,7 @@ Flag on:  a swallowed exception is probed, confirmed by the un-swallowed re-run,
 
 from __future__ import annotations
 
+import json
 from contextlib import ExitStack
 from unittest.mock import Mock, patch
 
@@ -142,3 +143,99 @@ def test_probe_observer_sees_every_round(exp_log, monkeypatch):
     monkeypatch.setattr(runtime_hooks, "PROBE_OBSERVERS", [lambda state, rows: seen.append(rows)])
     _run(SWALLOW, [])
     assert seen and seen[0][0]["kind"] == "swallowed_exception" and seen[0][0]["verified"] is True
+
+
+# ---- L2 critic tier ---------------------------------------------------------------------------
+COERCE = ("import pandas as pd\n"
+          "print(pd.to_numeric(pd.Series(['1,200', '35']), errors='coerce').sum())")
+
+
+@pytest.fixture
+def critic_env(exp_log, monkeypatch):
+    from reforge.experience import critic as critic_mod
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CARDS", "1")
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC_MODEL", "fake-critic-model")
+    runtime_hooks._critic.cache_clear()
+    calls = []
+
+    def answer(verdict="wrong", confidence=0.9):
+        def _call(self, msg):
+            calls.append(msg)
+            return json.dumps({"suspect": "s", "evidence": "e", "verdict": verdict, "confidence": confidence}), 900, 60
+        monkeypatch.setattr(critic_mod.Critic, "_call", _call)
+    yield calls, answer
+    runtime_hooks._critic.cache_clear()
+
+
+def _verdicts():
+    return [e.payload for e in runtime_hooks.runtime_loop().store.log.events("VERDICT")]
+
+
+def test_critic_flag_off_never_calls_the_critic(critic_env, monkeypatch):
+    calls, answer = critic_env
+    answer()
+    monkeypatch.delenv("REFORGE_EXPERIENCE_CRITIC", raising=False)
+    _run(COERCE, [])
+    assert calls == [] and _verdicts() == [] and runtime_hooks.runtime_loop().store.cards() == {}
+
+
+def test_critic_confirms_coerce_drop_into_quarantine_as_judgment(critic_env, monkeypatch):
+    calls, answer = critic_env
+    answer("wrong", 0.9)
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC", "1")
+    _run(COERCE, [])
+    assert len(calls) >= 1
+    v = _verdicts()[0]
+    assert v["tier"] == "llm_critic" and v["confirmed"] and v["prompt_tokens"] == 900 and v["confidence"] == 0.9
+    (card,) = runtime_hooks.runtime_loop().store.cards().values()
+    assert card.status == "quarantined" and card.kind == "coerce_drop" and card.verifier == "llm_critic"
+    assert card.evidence[0]["confirmation"] == "judgment" and card.evidence[0]["critic_model"] == "fake-critic-model"
+
+
+def test_low_confidence_wrong_is_an_abstention(critic_env, monkeypatch):
+    calls, answer = critic_env
+    answer("wrong", 0.6)
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC", "1")
+    _run(COERCE, [])
+    assert calls and not _verdicts()[0]["confirmed"] and runtime_hooks.runtime_loop().store.cards() == {}
+
+
+def test_critic_not_called_without_a_suspicious_signal(critic_env, monkeypatch):
+    calls, answer = critic_env
+    answer()
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC", "1")
+    _run("print(sum([1, 2, 3]))", [])
+    assert calls == []
+
+
+def test_critic_same_model_as_generator_is_refused(critic_env, monkeypatch):
+    calls, answer = critic_env
+    answer()
+    from reforge.config import config
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC", "1")
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC_MODEL", config.llm_model)
+    runtime_hooks._critic.cache_clear()
+    state = _run(COERCE, [])
+    assert state.exec_state.exit_code == 0 and calls == [] and _verdicts() == []
+
+
+def test_critic_error_abstains_and_run_continues(critic_env, monkeypatch):
+    from reforge.experience import critic as critic_mod
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC", "1")
+
+    def boom(self, msg):
+        raise TimeoutError("critic down")
+    monkeypatch.setattr(critic_mod.Critic, "_call", boom)
+    state = _run(COERCE, [])
+    assert state.exec_state.exit_code == 0
+    v = _verdicts()[0]
+    assert v["verdict"] == "abstain" and not v["confirmed"] and v["error"] == "TimeoutError"
+
+
+def test_both_flags_off_prompt_byte_identical_with_critic_env_set(exp_log, monkeypatch):
+    monkeypatch.delenv("REFORGE_EXPERIENCE_CARDS", raising=False)
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC", "1")              # critic alone does nothing
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CRITIC_MODEL", "fake-critic-model")
+    systems: list[str] = []
+    _run(COERCE, systems)
+    assert systems and all(s == CODE_GENERATION_SYSTEM for s in systems) and not exp_log.exists()

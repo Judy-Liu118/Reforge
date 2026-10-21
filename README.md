@@ -210,6 +210,17 @@ code-generation prompt and runs probe → verify → quarantine-mint after each 
 probes are a swallowed exception (confirmed by an un-swallowed re-run) and a missing return (confirmed by
 an AST check). With the flag off, the prompt is byte-identical and nothing is logged.
 
+**The L2 cross-model LLM critic is wired into the main runtime as an optional second-tier verifier**
+(`REFORGE_EXPERIENCE_CRITIC=1`, off by default). It is called only on signals the deterministic verifiers
+cannot confirm: empty output, NaN/inf, and values coerced to missing. Its confirmations are tagged as
+`judgment`, separate from `reproducible` ones, and they enter quarantine; only an offline canary can
+promote them.
+
+A small test (n=4 triggers) gave 2/2 true coerce failures confirmed and 0 false positives on first
+judgment, at about 1.8k tokens per trigger. But a post-hoc re-judgment of a correct round returned
+"wrong" with confidence 1.0, so the critic's verdicts are not reproducible. Keep it off until confirmation
+requires agreement across samples.
+
 ```
 failure (e.g. answered after reading only page 0)
   → probe       cheap, gold-free: a list read's last page was full and the agent finished
