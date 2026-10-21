@@ -43,9 +43,18 @@ Small test (generator qwen3.8-max, critic qwen3.8-27b; 4 triggers, about 24.7k t
 | mean critic tokens per trigger | about 1.8k |
 | post-hoc re-judgment of a correct round | "wrong" at confidence 1.0, i.e. a false positive |
 
-The critic's verdicts are therefore not reproducible, so the tier stays off. The next step would be to
-require agreement across k samples, or a deterministic check of the critic's stated reason, before a
-confirmation counts.
+Status: the L2 LLM critic is an optional layer wired into the main runtime, off by default, triggered
+only on demand, and promoted only through the canary.
+
+In the small test (n=4) it confirmed coerce-dropped rows that the deterministic verifiers cannot confirm
+(confidence 0.95–1.0). However, it produced one full-confidence false positive on a correct round, and
+repeat consistency on the same input has not been measured. For both reasons the tier stays off by default
+and is not enabled for now.
+
+Next steps:
+- Measure repeat consistency: re-judge the same inputs k times.
+- Then require agreement across k samples, or a deterministic check of the critic's stated reason, before a
+  confirmation counts.
 
 ## 1. What was built
 

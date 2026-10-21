@@ -216,10 +216,13 @@ cannot confirm: empty output, NaN/inf, and values coerced to missing. Its confir
 `judgment`, separate from `reproducible` ones, and they enter quarantine; only an offline canary can
 promote them.
 
-A small test (n=4 triggers) gave 2/2 true coerce failures confirmed and 0 false positives on first
-judgment, at about 1.8k tokens per trigger. But a post-hoc re-judgment of a correct round returned
-"wrong" with confidence 1.0, so the critic's verdicts are not reproducible. Keep it off until confirmation
-requires agreement across samples.
+Small test, n=4 triggers:
+- On coerce-dropped rows, which the deterministic verifiers cannot confirm, it confirmed the true
+  failures (confidence 0.95–1.0).
+- On one correct round it produced a false positive at full confidence.
+- Repeat consistency on the same input has not been measured yet.
+
+So it stays off by default and is not enabled for now.
 
 ```
 failure (e.g. answered after reading only page 0)

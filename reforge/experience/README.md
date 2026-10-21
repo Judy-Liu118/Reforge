@@ -38,7 +38,12 @@ Probes written for Reforge's own execution domain, built on signals the runtime 
 - **Abstention**: only verdict "wrong" with confidence ≥ 0.8 confirms. A low-confidence verdict, an unparseable reply or an error counts as abstain, and the run continues.
 - **Two confirmation sources**: deterministic evidence has `confirmation="reproducible"`; critic evidence has `confirmation="judgment"` and `verifier="llm_critic"`. Both enter quarantine and need a canary to be promoted.
 - **Logging**: every judgment is a `VERDICT` event with verdict, confidence, `parse_ok`, model, tokens and prompt sha.
-- **Measured caveat**: the critic's verdicts are not reproducible. One correct round got "wrong" at confidence 1.0 on re-judgment. Keep the tier off until confirmations require agreement across samples.
+- **Measured caveat (small test, n=4)**:
+  - It confirmed coerce-dropped rows that the deterministic verifiers cannot confirm (confidence 0.95–1.0).
+  - It produced one full-confidence false positive on a correct round.
+  - Repeat consistency on the same input has not been measured yet.
+
+  The tier therefore stays off by default and is not enabled for now.
 
 Distillation in the runtime domain is a fixed template per failure kind, with no LLM call. Evidence is
 redacted to shapes: handler tier, exception class name, exit codes. The same lesson is never admitted
