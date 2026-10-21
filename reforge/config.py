@@ -17,6 +17,9 @@ class Config:
     llm_model: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     max_retry: int = int(os.getenv("MAX_RETRY", "3"))
     execution_timeout: int = int(os.getenv("EXECUTION_TIMEOUT", "30"))
+    # Optional provider switch for thinking-by-default models (Qwen3 on DashScope):
+    # "true"/"false" sends extra_body={"enable_thinking": ...}; unset sends nothing.
+    llm_enable_thinking: str = os.getenv("LLM_ENABLE_THINKING", "").strip().lower()
 
     # Vision (image understanding) — separate model so the primary text LLM
     # stays unchanged. Defaults target Zhipu GLM-4.6V; any OpenAI-compatible

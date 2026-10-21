@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 ENV = "reforge"
 LOG_ENV = "REFORGE_EXPERIENCE_LOG"
+CANARY_ENV = "REFORGE_EXPERIENCE_CANARY"      # comma-separated quarantined card ids, canary arms only
+
+# Observers called after every after_execution with (state, rows) — observability for measurement
+# harnesses (probe precision / recall). They see what the hook saw; they cannot change the run.
+PROBE_OBSERVERS: list[Callable] = []
 
 TEMPLATES = {
     "swallowed_exception": {
@@ -64,15 +69,16 @@ def _log_path() -> Path:
     return global_dir() / "experience" / "loop.jsonl"
 
 
-@lru_cache(maxsize=4)
-def _loop_for(path: str) -> ExperienceLoop:
+@lru_cache(maxsize=8)
+def _loop_for(path: str, canary: str = "") -> ExperienceLoop:
     return ExperienceLoop(ExperienceConfig(log_path=Path(path), env=ENV, enabled=True,
+                                           canary_card_ids=frozenset(x for x in canary.split(",") if x),
                                            required_anchors={"swallowed_exception": frozenset({"raise"}),
                                                              "missing_return": frozenset({"return"})}))
 
 
 def runtime_loop() -> ExperienceLoop:
-    return _loop_for(str(_log_path()))
+    return _loop_for(str(_log_path()), os.environ.get(CANARY_ENV, ""))
 
 
 def _task(state, session_id: str) -> TaskContext:
@@ -126,6 +132,11 @@ def after_execution(state, session_id: str = "", *, rerun: Callable[[str], tuple
                  for s in runtime_probes.probe_only_suspicions(state.user_request, out.stdout, out.exit_code)]
     except Exception:                                   # learning must never break the run it learns from
         logger.warning("experience mint failed; run continues unchanged", exc_info=True)
+    for obs in PROBE_OBSERVERS:
+        try:
+            obs(state, rows)
+        except Exception:                               # an observer must never break the run either
+            logger.warning("experience probe observer failed", exc_info=True)
     return rows
 
 

@@ -51,6 +51,7 @@ class ExperienceConfig:
     known_apps: tuple[str, ...] = ()
     enabled: bool = field(default_factory=_flag_default)
     max_injected: int = 4
+    canary_card_ids: frozenset[str] = frozenset()   # quarantined candidates injected for a canary arm only
     banned_terms: frozenset[str] = frozenset()                  # e.g. app / API names for env-wide cards
     banned_by_kind: dict[str, frozenset[str]] = field(default_factory=dict)   # kind -> extra banned terms
     required_anchors: dict[str, frozenset[str]] = field(default_factory=dict)   # kind -> terms that must appear
@@ -81,6 +82,12 @@ class ExperienceLoop:
         picked = (conv + extra)[: self.config.max_injected]
         self.store.record_recall(task_id=task.task_id, run_id=task.run_id, stage="pre",
                                  layer="scope" if not extra else "scope+task", cards=picked, injected=bool(picked))
+        if self.config.canary_card_ids:                 # canary arm: the named candidates, logged separately
+            cand = [c for c in self.store.by_status("quarantined") if c.card_id in self.config.canary_card_ids]
+            if cand:
+                self.store.record_recall(task_id=task.task_id, run_id=task.run_id, stage="pre", layer="canary",
+                                         cards=cand, injected=True)
+                picked = picked + [c for c in cand if c not in picked]
         return picked
 
     def recall_on_step(self, task: TaskContext, step: dict, already: list[ConstraintCard]) -> list[ConstraintCard]:

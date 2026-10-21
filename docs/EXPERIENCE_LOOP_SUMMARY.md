@@ -81,7 +81,12 @@ Both arms then ran out of the per-episode token cap before finishing the task, s
    - BIRD fact memory: NO-GO. Recalled near-facts mislead (−0.10); constraint rewriting hurt (−0.17).
 
 ## 4. Future work
-- **Measure the runtime-domain probes on live traffic.** They are tested on a real sandbox, but their precision and recall on production runs are unmeasured. Runtime cards also need an offline canary before promotion.
+- **Runtime-domain probes, first live measurement (2026-10-21, small n).** Setup: qwen3.8-max, 11 rounds through `RuntimeRunner` with the flag on, 31.7k tokens.
+  - The full loop fired live once: a real swallowed `KeyError` (answer 0 instead of 6) → probe → un-swallowed re-run confirmed → card quarantined → canary passed → promoted → recalled on a later task.
+  - Swallow probe precision is 1/2 (the miss was a handler that never ran) and recall 1/1. The verifier rejected the false positive.
+  - **The dominant silent failure was outside both probes.** `to_numeric(errors="coerce")` silently dropped rows in 2 of the 3 silent failures. So probe coverage was 1/3.
+  - On the recurrence task the promoted card was injected but did not change the answer, because the error there was the coerce kind. Prevention is therefore not shown.
+  - Next: a coerce / NaN-drop probe, with a verifier that counts the rows dropped. Details are in the local `runs/runtime_live/report.md`.
 - **Task-level precise retrieval.** Match on runtime events (step code / output) rather than instruction text, or on a distilled "applies-to" field. Audit precision offline on recorded traces before any agent run.
 - **Card compliance.** Measure it per model, and compare phrasing (abstract vs anchored) at larger n.
 - **On-demand recall.** Inject a convention card when its trigger fires (e.g. a list call returned exactly `page_limit` items), not up front. This addresses the step cost in finding 2.

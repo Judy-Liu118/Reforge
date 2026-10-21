@@ -159,6 +159,7 @@ class LLMClient:
                         {"role": "user", "content": user_content},
                     ],
                     temperature=0.1,
+                    **_thinking_kwargs(),
                 )
 
                 elapsed_ms = (time.monotonic() - t0) * 1000
@@ -243,3 +244,11 @@ def _encode_image_data_url(path: Path) -> str:
         mime = "image/png"
     data = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{data}"
+
+
+def _thinking_kwargs() -> dict[str, Any]:
+    """extra_body for LLM_ENABLE_THINKING=true|false; {} when unset (request unchanged)."""
+    flag = config.llm_enable_thinking
+    if flag in ("true", "false"):
+        return {"extra_body": {"enable_thinking": flag == "true"}}
+    return {}

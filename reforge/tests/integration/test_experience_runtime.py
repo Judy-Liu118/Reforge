@@ -117,3 +117,28 @@ def test_hook_failure_never_breaks_the_run(exp_log, monkeypatch):
     monkeypatch.setattr(runtime_hooks, "runtime_loop", boom)
     state = _run("print('ok')", [])
     assert state.exec_state.exit_code == 0 and state.exec_state.stdout == "ok\n"
+
+
+def test_canary_env_injects_only_the_named_quarantined_card(exp_log, monkeypatch):
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CARDS", "1")
+    _run(SWALLOW, [])
+    cid = next(iter(runtime_hooks.runtime_loop().store.cards()))
+    monkeypatch.setenv(runtime_hooks.CANARY_ENV, cid)
+    systems: list[str] = []
+    _run("print(42)", systems)
+    assert "Guardrails learned" in systems[0]
+    loop = runtime_hooks.runtime_loop()
+    assert loop.store.get(cid).status == "quarantined"                 # canary does not promote
+    assert any(u["layer"] == "canary" for u in loop.store.used_by(cid))
+    monkeypatch.delenv(runtime_hooks.CANARY_ENV)
+    systems.clear()
+    _run("print(42)", systems)
+    assert "Guardrails learned" not in systems[0]                     # outside the canary arm it stays out
+
+
+def test_probe_observer_sees_every_round(exp_log, monkeypatch):
+    monkeypatch.setenv("REFORGE_EXPERIENCE_CARDS", "1")
+    seen = []
+    monkeypatch.setattr(runtime_hooks, "PROBE_OBSERVERS", [lambda state, rows: seen.append(rows)])
+    _run(SWALLOW, [])
+    assert seen and seen[0][0]["kind"] == "swallowed_exception" and seen[0][0]["verified"] is True
